@@ -68,7 +68,7 @@ const RegisterForm: React.FC = () => {
       toast({
         variant: "destructive",
         title: "Registration failed",
-        description: error.message || "Please check your information and try again.",
+        description: error instanceof Error ? error.message : "Please check your information and try again.",
       });
     }
   }
@@ -186,8 +186,8 @@ const RegisterForm: React.FC = () => {
       <CardFooter className="flex justify-center">
         <p className="text-sm text-neutral-600 dark:text-neutral-400">
           Already have an account?{" "}
-          <Link href="/login">
-            <a className="text-primary font-medium hover:underline">Login</a>
+          <Link href="/login" className="text-primary font-medium hover:underline">
+            Login
           </Link>
         </p>
       </CardFooter>

@@ -30,16 +30,14 @@ const NavItem: React.FC<NavItemProps> = ({ href, icon, label, isActive, badge })
     : 'hover:bg-neutral-100 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-200';
 
   return (
-    <Link href={href}>
-      <a className={`flex items-center space-x-3 p-2 rounded-lg ${bgClass}`}>
-        {icon}
-        <span>{label}</span>
-        {badge && badge > 0 && (
-          <span className="ml-auto bg-primary text-white text-xs px-2 py-0.5 rounded-full">
-            {badge}
-          </span>
-        )}
-      </a>
+    <Link href={href} className={`flex items-center space-x-3 p-2 rounded-lg ${bgClass}`}>
+      {icon}
+      <span>{label}</span>
+      {badge && badge > 0 && (
+        <span className="ml-auto bg-primary text-white text-xs px-2 py-0.5 rounded-full">
+          {badge}
+        </span>
+      )}
     </Link>
   );
 };
