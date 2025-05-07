@@ -53,8 +53,9 @@ const LoginForm: React.FC<LoginFormProps> = ({ redirectTo = '/' }) => {
       
       // Add a slight delay to ensure the authentication state is updated
       setTimeout(() => {
-        // Force navigation to the dashboard
-        window.location.href = redirectTo;
+        // Force navigation to the dashboard - make sure we use the full path
+        // Use a relative URL to avoid problems with different environments
+        window.location.pathname = redirectTo;
       }, 500);
     } catch (error) {
       toast({
