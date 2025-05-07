@@ -1,0 +1,28 @@
+
+[vite] connecting...
+DOMException {name: "SyntaxError", message: "An invalid or illegal string was specified", code: 12, result: 2152923148, filename: "https://86edfb11-b394-45af-b491-16b77dcab76f-00-3j9mqz1q76fi4.kirk.replit.dev/__replco/static/devto…", …}
+
+Warning: validateDOMNesting(...): <a> cannot appear as a descendant of &lt;a&gt;.
+a
+a
+Link<@https://86edfb11-b394-45af-b491-16b77dcab76f-00-3j9mqz1q76fi4.kirk.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/wouter.js?v=a2349949:337:18
+p
+div
+_c11@https://86edfb11-b394-45af-b491-16b77dcab76f-00-3j9mqz1q76fi4.kirk.replit.dev/src/components/ui/card.tsx:123:10
+div
+_c@https://86edfb11-b394-45af-b491-16b77dcab76f-00-3j9mqz1q76fi4.kirk.replit.dev/src/components/ui/card.tsx:20:8
+LoginForm@https://86edfb11-b394-45af-b491-16b77dcab76f-00-3j9mqz1q76fi4.kirk.replit.dev/src/components/auth/LoginForm.tsx:43:19
+main
+div
+LoginPage@https://86edfb11-b394-45af-b491-16b77dcab76f-00-3j9mqz1q76fi4.kirk.replit.dev/src/pages/LoginPage.tsx:18:19
+Route@https://86edfb11-b394-45af-b491-16b77dcab76f-00-3j9mqz1q76fi4.kirk.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/wouter.js?v=a2349949:323:13
+Switch@https://86edfb11-b394-45af-b491-16b77dcab76f-00-3j9mqz1q76fi4.kirk.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/wouter.js?v=a2349949:379:14
+UnauthenticatedRoutes
+AppRoutes@https://86edfb11-b394-45af-b491-16b77dcab76f-00-3j9mqz1q76fi4.kirk.replit.dev/src/App.tsx?t=1746610684646&v=paJW54y5ZELvzZmw_nzBT:173:42
+Provider@https://86edfb11-b394-45af-b491-16b77dcab76f-00-3j9mqz1q76fi4.kirk.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-5AJU3CG7.js?v=a2349949:38:47
+TooltipProvider@https://86edfb11-b394-45af-b491-16b77dcab76f-00-3j9mqz1q76fi4.kirk.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/@radix-ui_react-tooltip.js?v=a2349949:66:7
+ChatProvider@https://86edfb11-b394-45af-b491-16b77dcab76f-00-3j9mqz1q76fi4.kirk.replit.dev/src/context/ChatContext.tsx:24:29
+WalletProvider@https://86edfb11-b394-45af-b491-16b77dcab76f-00-3j9mqz1q76fi4.kirk.replit.dev/src/context/WalletContext.tsx:23:31
+AuthProvider@https://86edfb11-b394-45af-b491-16b77dcab76f-00-3j9mqz1q76fi4.kirk.replit.dev/src/context/AuthContext.tsx:22:29
+App
+QueryClientProvider@https://86edfb11-b394-45af-b491-16b77dcab76f-00-3j9mqz1q76fi4.kirk.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/@tanstack_react-query.js?v=a2349949:2804:27

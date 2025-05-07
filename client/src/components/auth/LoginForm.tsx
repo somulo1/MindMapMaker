@@ -54,7 +54,7 @@ const LoginForm: React.FC<LoginFormProps> = ({ redirectTo = '/' }) => {
       toast({
         variant: "destructive",
         title: "Login failed",
-        description: error.message || "Please check your credentials and try again.",
+        description: error instanceof Error ? error.message : "Please check your credentials and try again.",
       });
     }
   }
@@ -105,8 +105,8 @@ const LoginForm: React.FC<LoginFormProps> = ({ redirectTo = '/' }) => {
       <CardFooter className="flex justify-center">
         <p className="text-sm text-neutral-600 dark:text-neutral-400">
           Don't have an account?{" "}
-          <Link href="/register">
-            <a className="text-primary font-medium hover:underline">Register</a>
+          <Link href="/register" className="text-primary font-medium hover:underline">
+            Register
           </Link>
         </p>
       </CardFooter>
