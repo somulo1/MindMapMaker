@@ -51,12 +51,8 @@ const LoginForm: React.FC<LoginFormProps> = ({ redirectTo = '/' }) => {
         description: "Welcome back to Tujifund!",
       });
       
-      // Add a slight delay to ensure the authentication state is updated
-      setTimeout(() => {
-        // Force navigation to the dashboard - make sure we use the full path
-        // Use a relative URL to avoid problems with different environments
-        window.location.pathname = redirectTo;
-      }, 500);
+      // Simply use the wouter location setter for navigation
+      setLocation(redirectTo);
     } catch (error) {
       toast({
         variant: "destructive",
