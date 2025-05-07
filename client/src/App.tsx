@@ -20,15 +20,33 @@ import SettingsPage from "./pages/SettingsPage";
 function AuthenticatedRoutes() {
   return (
     <Switch>
-      <Route path="/" component={PersonalDashboardPage} />
-      <Route path="/chamas" component={ChamasDashboardPage} />
-      <Route path="/chamas/:id" component={ChamaDetailPage} />
-      <Route path="/messages" component={MessagesPage} />
-      <Route path="/wallet" component={WalletPage} />
-      <Route path="/marketplace" component={MarketplacePage} />
-      <Route path="/learning" component={LearningHubPage} />
-      <Route path="/settings" component={SettingsPage} />
-      <Route component={NotFound} />
+      <Route path="/">
+        <PersonalDashboardPage />
+      </Route>
+      <Route path="/chamas">
+        <ChamasDashboardPage />
+      </Route>
+      <Route path="/chamas/:id">
+        {(params) => <ChamaDetailPage id={params.id} />}
+      </Route>
+      <Route path="/messages">
+        <MessagesPage />
+      </Route>
+      <Route path="/wallet">
+        <WalletPage />
+      </Route>
+      <Route path="/marketplace">
+        <MarketplacePage />
+      </Route>
+      <Route path="/learning">
+        <LearningHubPage />
+      </Route>
+      <Route path="/settings">
+        <SettingsPage />
+      </Route>
+      <Route>
+        <NotFound />
+      </Route>
     </Switch>
   );
 }
@@ -36,10 +54,18 @@ function AuthenticatedRoutes() {
 function UnauthenticatedRoutes() {
   return (
     <Switch>
-      <Route path="/" component={HomePage} />
-      <Route path="/login" component={LoginPage} />
-      <Route path="/register" component={RegisterPage} />
-      <Route component={() => <LoginPage redirectTo="/" />} />
+      <Route path="/">
+        <HomePage />
+      </Route>
+      <Route path="/login">
+        <LoginPage />
+      </Route>
+      <Route path="/register">
+        <RegisterPage />
+      </Route>
+      <Route>
+        <LoginPage redirectTo="/" />
+      </Route>
     </Switch>
   );
 }
