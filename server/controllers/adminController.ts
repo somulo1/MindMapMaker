@@ -2,6 +2,7 @@
 import { Request, Response } from 'express';
 import { storage } from '../storage';
 import { z } from 'zod';
+import axios from 'axios';
 import { createClient } from '@supabase/supabase-js';
 
 if (!process.env.MPESA_CONSUMER_KEY || !process.env.MPESA_CONSUMER_SECRET) {
@@ -12,8 +13,20 @@ if (!process.env.MPESA_CONSUMER_KEY || !process.env.MPESA_CONSUMER_SECRET) {
 const mpesaConfig = {
   consumerKey: process.env.MPESA_CONSUMER_KEY,
   consumerSecret: process.env.MPESA_CONSUMER_SECRET,
-  environment: 'sandbox'
+  environment: 'sandbox',
+  baseUrl: 'https://sandbox.safaricom.co.ke'
 };
+
+// M-PESA auth token generation
+async function getMpesaToken() {
+  const auth = Buffer.from(`${mpesaConfig.consumerKey}:${mpesaConfig.consumerSecret}`).toString('base64');
+  const response = await axios.get(`${mpesaConfig.baseUrl}/oauth/v1/generate?grant_type=client_credentials`, {
+    headers: {
+      Authorization: `Basic ${auth}`
+    }
+  });
+  return response.data.access_token;
+}
 
 const supabase = createClient(
   process.env.SUPABASE_URL || '',
@@ -43,12 +56,22 @@ export async function createBackup(req: Request, res: Response) {
 
 export async function getPayments(req: Request, res: Response) {
   try {
-    // Implement M-PESA transaction query here
-    const payments = {
-      data: [] // Will contain M-PESA transactions
-    };
+    const token = await getMpesaToken();
+    const { data: transactions } = await supabase
+      .from('mpesa_transactions')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(100);
     
-    return res.status(200).json(payments);
+    return res.status(200).json({ 
+      data: transactions?.map(tx => ({
+        id: tx.id,
+        amount: tx.amount,
+        status: tx.status,
+        created: tx.created_at,
+        reference: tx.reference
+      }))
+    });
   } catch (error: any) {
     return res.status(500).json({
       message: 'Failed to fetch payments',
