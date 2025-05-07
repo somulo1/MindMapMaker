@@ -71,26 +71,16 @@ const ChamaDetailPage: React.FC<ChamaDetailPageProps> = ({ id: propId }) => {
     },
   });
   
-  // Set current chama when the page loads - optimized for performance
+  // Set current chama when the page loads
   useEffect(() => {
-    if (chamaId && chamaId > 0) {
-      // Use Promise.all to perform operations in parallel
-      const initChama = async () => {
-        try {
-          // First set the chama ID to avoid race conditions
-          selectChama(chamaId);
-          setChamaId(chamaId);
-          
-          // Then handle chat connection if needed
-          if (currentChamaId !== chamaId) {
-            joinChamaChat(chamaId);
-          }
-        } catch (error) {
-          console.error("Error initializing chama:", error);
-        }
-      };
+    if (chamaId) {
+      selectChama(chamaId);
+      setChamaId(chamaId);
       
-      initChama();
+      // Join chama chat
+      if (currentChamaId !== chamaId) {
+        joinChamaChat(chamaId);
+      }
     }
   }, [chamaId, selectChama, setChamaId, joinChamaChat, currentChamaId]);
   
