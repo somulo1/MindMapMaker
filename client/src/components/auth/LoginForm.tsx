@@ -15,7 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/context/AuthContext';
-import { Link } from 'wouter';
+import { Link, useLocation } from 'wouter';
 
 const formSchema = z.object({
   username: z.string().min(3, {
@@ -33,6 +33,7 @@ interface LoginFormProps {
 const LoginForm: React.FC<LoginFormProps> = ({ redirectTo = '/' }) => {
   const { login, isLoading } = useAuth();
   const { toast } = useToast();
+  const [_, setLocation] = useLocation();
   
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -44,12 +45,17 @@ const LoginForm: React.FC<LoginFormProps> = ({ redirectTo = '/' }) => {
 
   async function onSubmit(values: z.infer<typeof formSchema>) {
     try {
-      await login(values.username, values.password);
+      const response = await login(values.username, values.password);
       toast({
         title: "Login successful",
         description: "Welcome back to Tujifund!",
       });
-      // Navigation will be handled by App.tsx based on auth state
+      
+      // Add a slight delay to ensure the authentication state is updated
+      setTimeout(() => {
+        // Force navigation to the dashboard
+        window.location.href = redirectTo;
+      }, 500);
     } catch (error) {
       toast({
         variant: "destructive",
