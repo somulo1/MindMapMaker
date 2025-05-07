@@ -18,6 +18,47 @@ import LearningHubPage from "./pages/LearningHubPage";
 import SettingsPage from "./pages/SettingsPage";
 
 function AuthenticatedRoutes() {
+  const { user } = useAuth();
+
+  // Admin routes
+  if (user?.role === 'admin') {
+    return (
+      <Switch>
+        <Route path="/admin">
+          <AdminDashboardPage />
+        </Route>
+        <Route path="/admin/users">
+          <AdminDashboardPage />
+        </Route>
+        <Route path="/admin/settings">
+          <AdminDashboardPage />
+        </Route>
+        <Route path="/admin/security">
+          <AdminDashboardPage />
+        </Route>
+        <Route path="/admin/backups">
+          <AdminDashboardPage />
+        </Route>
+        <Route path="/admin/payments">
+          <AdminDashboardPage />
+        </Route>
+        <Route path="/admin/ai">
+          <AdminDashboardPage />
+        </Route>
+        <Route path="/admin/support">
+          <AdminDashboardPage />
+        </Route>
+        <Route path="/admin/analytics">
+          <AdminDashboardPage />
+        </Route>
+        <Route>
+          <NotFound />
+        </Route>
+      </Switch>
+    );
+  }
+
+  // Regular user routes
   return (
     <Switch>
       <Route path="/chamas/:id">
