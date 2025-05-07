@@ -20,6 +20,8 @@ import * as marketplaceController from "./controllers/marketplaceController";
 import * as learningController from "./controllers/learningController";
 import * as aiController from "./controllers/aiController";
 import * as chatController from "./controllers/chatController";
+import * as adminController from "./controllers/adminController"; // Import admin controller
+
 
 const SessionStore = MemoryStore(session);
 
@@ -81,6 +83,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.status(401).json({ message: "Unauthorized" });
   };
 
+  // Admin middleware
+  const isAdmin = (req: Request, res: Response, next: any) => {
+    if (req.user && (req.user as any).role === 'admin') {
+      return next();
+    }
+    res.status(403).json({ message: "Forbidden" });
+  };
+
   // Error handler middleware
   const handleErrors = (handler: (req: Request, res: Response) => Promise<any>) => {
     return async (req: Request, res: Response) => {
@@ -137,6 +147,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/messages/user", isAuthenticated, handleErrors(chatController.getUserMessages));
   app.get("/api/messages/chama/:chamaId", isAuthenticated, handleErrors(chatController.getChamaMessages));
   app.post("/api/messages", isAuthenticated, handleErrors(chatController.createMessage));
+
+  // Admin routes
+  app.post("/api/admin/backups", isAuthenticated, isAdmin, handleErrors(adminController.createBackup));
+  app.get("/api/admin/payments", isAuthenticated, isAdmin, handleErrors(adminController.getPayments));
+  app.post("/api/admin/tickets", isAuthenticated, isAdmin, handleErrors(adminController.createTicket));
 
   // Create HTTP server
   const httpServer = createServer(app);
