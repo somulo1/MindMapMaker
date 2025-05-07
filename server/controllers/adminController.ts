@@ -2,16 +2,18 @@
 import { Request, Response } from 'express';
 import { storage } from '../storage';
 import { z } from 'zod';
-import { Stripe } from 'stripe';
 import { createClient } from '@supabase/supabase-js';
 
-if (!process.env.STRIPE_SECRET_KEY) {
-  throw new Error('STRIPE_SECRET_KEY environment variable is not set');
+if (!process.env.MPESA_CONSUMER_KEY || !process.env.MPESA_CONSUMER_SECRET) {
+  throw new Error('MPESA credentials not set in environment variables');
 }
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
-  apiVersion: '2023-10-16',
-});
+// Initialize M-PESA config
+const mpesaConfig = {
+  consumerKey: process.env.MPESA_CONSUMER_KEY,
+  consumerSecret: process.env.MPESA_CONSUMER_SECRET,
+  environment: 'sandbox'
+};
 
 const supabase = createClient(
   process.env.SUPABASE_URL || '',
@@ -41,9 +43,10 @@ export async function createBackup(req: Request, res: Response) {
 
 export async function getPayments(req: Request, res: Response) {
   try {
-    const payments = await stripe.paymentIntents.list({
-      limit: 100,
-    });
+    // Implement M-PESA transaction query here
+    const payments = {
+      data: [] // Will contain M-PESA transactions
+    };
     
     return res.status(200).json(payments);
   } catch (error: any) {
