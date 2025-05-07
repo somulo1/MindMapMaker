@@ -23,7 +23,18 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({
 
   return (
     <div className="min-h-screen bg-neutral-100 dark:bg-neutral-900">
-      <header className="bg-white dark:bg-neutral-800 shadow-sm">
+      <aside className="fixed inset-y-0 left-0 w-64 bg-white dark:bg-neutral-800 border-r border-neutral-200 dark:border-neutral-700">
+        <div className="p-4">
+          <div className="flex items-center space-x-2">
+            <Shield className="h-6 w-6 text-primary" />
+            <span className="font-bold text-lg">Admin Panel</span>
+          </div>
+        </div>
+        <AdminNavigation />
+      </aside>
+      
+      <div className="pl-64">
+        <header className="bg-white dark:bg-neutral-800 shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex items-center space-x-4">
             <div className="p-2 bg-primary/10 rounded-lg">
