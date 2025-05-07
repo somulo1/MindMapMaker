@@ -21,7 +21,7 @@ import * as learningController from "./controllers/learningController";
 import * as aiController from "./controllers/aiController";
 import * as chatController from "./controllers/chatController";
 import * as adminController from "./controllers/adminController"; // Import admin controller
-
+import * as mpesaController from './controllers/mpesaController';
 
 const SessionStore = MemoryStore(session);
 
@@ -152,6 +152,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/admin/backups", isAuthenticated, isAdmin, handleErrors(adminController.createBackup));
   app.get("/api/admin/payments", isAuthenticated, isAdmin, handleErrors(adminController.getPayments));
   app.post("/api/admin/tickets", isAuthenticated, isAdmin, handleErrors(adminController.createTicket));
+
+  // M-PESA routes
+  app.post('/api/mpesa/initiate', isAuthenticated, handleErrors(mpesaController.initializePayment));
+  app.post('/api/mpesa/callback', handleErrors(mpesaController.handleCallback));
 
   // Create HTTP server
   const httpServer = createServer(app);
