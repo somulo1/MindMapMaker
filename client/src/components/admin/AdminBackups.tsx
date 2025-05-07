@@ -1,11 +1,18 @@
-
 import React, { useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { apiRequest } from '@/lib/queryClient';
-import { Database, AlertCircle, CheckCircle } from 'lucide-react';
+import { Database, AlertCircle, CheckCircle, Download, Loader2 } from 'lucide-react';
+
+async function createBackup() {
+  const response = await fetch('/api/admin/backups/create', {
+    method: 'POST',
+  });
+  if (!response.ok) throw new Error('Failed to create backup');
+  return response.json();
+}
 
 const AdminBackups: React.FC = () => {
   const { toast } = useToast();
@@ -19,21 +26,18 @@ const AdminBackups: React.FC = () => {
   });
 
   const createBackupMutation = useMutation({
-    mutationFn: async () => {
-      const res = await apiRequest('POST', '/api/admin/backups');
-      return res.json();
-    },
+    mutationFn: createBackup,
     onSuccess: () => {
       toast({
-        title: "Backup created",
-        description: "System backup has been created successfully.",
+        title: "Backup created successfully",
+        description: "System data has been backed up to secure storage"
       });
     },
-    onError: (error: any) => {
+    onError: (error) => {
       toast({
-        variant: "destructive",
-        title: "Backup failed",
-        description: error.message || "Failed to create system backup.",
+        title: "Failed to create backup",
+        description: error.message,
+        variant: "destructive"
       });
     }
   });
@@ -42,7 +46,10 @@ const AdminBackups: React.FC = () => {
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle>System Backups</CardTitle>
+          <CardTitle className="text-xl flex items-center gap-2">
+            <Database className="h-5 w-5" />
+            System Backups
+          </CardTitle>
           <CardDescription>
             Manage and create system backups
           </CardDescription>
@@ -52,9 +59,19 @@ const AdminBackups: React.FC = () => {
             <Button 
               onClick={() => createBackupMutation.mutate()}
               disabled={createBackupMutation.isPending}
+              className="w-full sm:w-auto"
             >
-              <Database className="mr-2 h-4 w-4" />
-              {createBackupMutation.isPending ? 'Creating backup...' : 'Create Backup'}
+              {createBackupMutation.isPending ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Creating Backup...
+                </>
+              ) : (
+                <>
+                  <Download className="mr-2 h-4 w-4" />
+                  Create New Backup
+                </>
+              )}
             </Button>
 
             <div className="space-y-4">
