@@ -70,18 +70,12 @@ export function useWallet() {
   });
   
   // Deposit funds
-  const deposit = async (amount: number, phoneNumber: string, description?: string) => {
-    const response = await fetch('/api/mpesa/initiate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ amount, phoneNumber, description })
+  const deposit = async (amount: number, description?: string) => {
+    return createTransactionMutation.mutateAsync({
+      type: 'deposit',
+      amount,
+      description: description || 'Deposit'
     });
-    
-    if (!response.ok) {
-      throw new Error('Failed to initiate M-PESA payment');
-    }
-    
-    return response.json();
   };
   
   // Withdraw funds
