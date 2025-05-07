@@ -118,14 +118,10 @@ const AdminDashboardPage: React.FC = () => {
     </div>
   );
 
-  return isMobile ? (
-    <MobileLayout title={pageTitle}>
+  return (
+    <AdminLayout title={pageTitle} subtitle={pageDescription}>
       {content}
-    </MobileLayout>
-  ) : (
-    <DesktopLayout>
-      {content}
-    </DesktopLayout>
+    </AdminLayout>
   );
 };
 
