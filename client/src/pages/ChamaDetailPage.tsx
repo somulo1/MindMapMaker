@@ -38,9 +38,14 @@ const addMemberSchema = z.object({
   contributionFrequency: z.string().optional(),
 });
 
-const ChamaDetailPage: React.FC = () => {
-  const { id } = useParams<{ id: string }>();
-  const chamaId = parseInt(id);
+interface ChamaDetailPageProps {
+  id?: string;
+}
+
+const ChamaDetailPage: React.FC<ChamaDetailPageProps> = ({ id: propId }) => {
+  const params = useParams<{ id: string }>();
+  const id = propId || params.id;
+  const chamaId = parseInt(id || '0');
   const isMobile = useMediaQuery('(max-width: 768px)');
   const { currentChama, chamaMembers, selectChama, addMember, isLoading } = useChama();
   const { chamaWallet, chamaTransactions, contributeToChamaFunds, setChamaId } = useWallet();
@@ -93,7 +98,7 @@ const ChamaDetailPage: React.FC = () => {
       toast({
         variant: "destructive",
         title: "Contribution failed",
-        description: error.message || "An error occurred during the contribution.",
+        description: error instanceof Error ? error.message : "An error occurred during the contribution.",
       });
     }
   };
@@ -112,7 +117,7 @@ const ChamaDetailPage: React.FC = () => {
       toast({
         variant: "destructive",
         title: "Failed to add member",
-        description: error.message || "An error occurred while adding the member.",
+        description: error instanceof Error ? error.message : "An error occurred while adding the member.",
       });
     }
   };
