@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiRequest } from '@/lib/queryClient';
 import { useAuth } from '@/context/AuthContext';
+import { useLocation } from 'wouter';
 
 interface Chama {
   id: number;
@@ -57,6 +58,7 @@ export function useChama() {
   const queryClient = useQueryClient();
   const [currentChamaId, setCurrentChamaId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [, setLocation] = useLocation();
   
   // Fetch user's chamas
   const { data: chamasData, isLoading: isLoadingChamas } = useQuery({
@@ -82,7 +84,7 @@ export function useChama() {
       try {
         const res = await apiRequest('POST', '/api/chamas', chamaData);
         return await res.json();
-      } catch (error) {
+      } catch (error: any) {
         throw new Error(error.message || 'Failed to create chama');
       }
     },
@@ -92,6 +94,9 @@ export function useChama() {
       // Set the newly created chama as current
       if (data.chama?.id) {
         setCurrentChamaId(data.chama.id);
+        
+        // Navigate to the new chama's details page
+        setLocation(`/chamas/${data.chama.id}`);
       }
       
       setError(null);
@@ -107,7 +112,7 @@ export function useChama() {
       try {
         const res = await apiRequest('POST', `/api/chamas/${chamaId}/members`, memberData);
         return await res.json();
-      } catch (error) {
+      } catch (error: any) {
         throw new Error(error.message || 'Failed to add member');
       }
     },
