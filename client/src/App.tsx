@@ -20,14 +20,11 @@ import SettingsPage from "./pages/SettingsPage";
 function AuthenticatedRoutes() {
   return (
     <Switch>
-      <Route path="/">
-        <PersonalDashboardPage />
+      <Route path="/chamas/:id">
+        {(params) => <ChamaDetailPage id={params.id} />}
       </Route>
       <Route path="/chamas">
         <ChamasDashboardPage />
-      </Route>
-      <Route path="/chamas/:id">
-        {(params) => <ChamaDetailPage id={params.id} />}
       </Route>
       <Route path="/messages">
         <MessagesPage />
@@ -44,6 +41,9 @@ function AuthenticatedRoutes() {
       <Route path="/settings">
         <SettingsPage />
       </Route>
+      <Route path="/">
+        <PersonalDashboardPage />
+      </Route>
       <Route>
         <NotFound />
       </Route>
@@ -54,14 +54,14 @@ function AuthenticatedRoutes() {
 function UnauthenticatedRoutes() {
   return (
     <Switch>
-      <Route path="/">
-        <HomePage />
-      </Route>
       <Route path="/login">
         <LoginPage />
       </Route>
       <Route path="/register">
         <RegisterPage />
+      </Route>
+      <Route path="/">
+        <HomePage />
       </Route>
       <Route>
         <LoginPage redirectTo="/" />
