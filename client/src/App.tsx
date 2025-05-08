@@ -1,7 +1,7 @@
 import { Switch, Route } from "wouter";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import NotFound from "@/pages/user/not-found";
+import NotFound from "./pages/user/not-found"; // Correct path;
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { WalletProvider } from "./context/WalletContext";
 import { ChatProvider } from "./context/ChatContext";
@@ -119,6 +119,7 @@ function AppRoutes() {
 
   return isAuthenticated ? <AuthenticatedRoutes /> : <UnauthenticatedRoutes />;
 }
+
 // Main App component with all providers
 function App() {
   return (
@@ -134,4 +135,5 @@ function App() {
     </AuthProvider>
   );
 }
+
 export default App;
