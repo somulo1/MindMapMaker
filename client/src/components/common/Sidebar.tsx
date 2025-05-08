@@ -54,7 +54,7 @@ const Sidebar: React.FC = () => {
   return (
     <aside className="w-64 bg-white dark:bg-neutral-800 shadow-md h-full flex flex-col">
       <div className="p-4 flex items-center space-x-2 border-b border-neutral-200 dark:border-neutral-700">
-        <span className="material-icons text-primary text-2xl">account_balance</span>
+        {/* <span className="material-icons text-primary text-2xl">account_balance</span> */}
         <h1 className="text-xl font-semibold text-primary">Tujifund</h1>
       </div>
       
