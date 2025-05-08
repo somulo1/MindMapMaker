@@ -97,6 +97,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
     };
   };
 
+  const requireAuth = (req: any, res: any, next: any) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: "Authentication required" });
+    }
+    next();
+  };
+  // Helper function to verify chama membership
+  const verifyChamaMembership = async (req: any, res: any, next: any) => {
+    const chamaId = parseInt(req.params.chamaId);
+    if (isNaN(chamaId)) {
+      return res.status(400).json({ message: "Invalid chama ID" });
+    }
+
+    const member = await storage.getChamaMember(chamaId, req.user.id);
+    if (!member) {
+      return res.status(403).json({ message: "Not a member of this chama" });
+    }
+
+    req.chamaMember = member;
+    next();
+  };
+  // CHAMA MEMBERS API
+  app.get("/api/chamas/:chamaId/members", requireAuth, verifyChamaMembership, async (req, res) => {
+    try {
+      const chamaId = parseInt(req.params.chamaId);
+      const members = await storage.getChamaMembers(chamaId);
+      res.json(members);
+    } catch (error) {
+      res.status(500).json({ message: "Server error" });
+    }
+  });
+
+
+
+  
   // Auth routes
   app.post("/api/auth/register", handleErrors(authController.register));
   app.post("/api/auth/login", passport.authenticate("local"), handleErrors(authController.login));

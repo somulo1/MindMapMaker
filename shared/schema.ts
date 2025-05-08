@@ -93,6 +93,18 @@ export const transactions = pgTable("transactions", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+// Notifications
+export const notifications = pgTable("notifications", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id),
+  type: text("type").notNull(), // contribution_due, meeting_scheduled, loan_approved, etc.
+  title: text("title").notNull(),
+  content: text("content").notNull(),
+  read: boolean("read").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+  relatedId: integer("related_id"), // Could reference a meeting, contribution, etc.
+});
+
 export const insertTransactionSchema = createInsertSchema(transactions).omit({
   id: true,
   createdAt: true,
@@ -168,11 +180,12 @@ export const insertAiConversationSchema = createInsertSchema(aiConversations).om
   createdAt: true,
   updatedAt: true,
 });
-
+export const insertNotificationSchema = createInsertSchema(notifications).omit({ id: true, createdAt: true, read: true });
 // Export types
 export type User = typeof users.$inferSelect;
 export type InsertUser = z.infer<typeof insertUserSchema>;
-
+export type Notification = typeof notifications.$inferSelect;
+export type InsertNotification = z.infer<typeof insertNotificationSchema>;
 export type Chama = typeof chamas.$inferSelect;
 export type InsertChama = z.infer<typeof insertChamaSchema>;
 
