@@ -10,6 +10,7 @@ import LearningHub from '@/components/dashboard/LearningHub';
 import AIAssistant from '@/components/dashboard/AIAssistant';
 import MarketplacePreview from '@/components/dashboard/MarketplacePreview';
 import { useAuth } from '@/context/AuthContext';
+import { MdGroups, MdReceiptLong, MdStore, MdSmartToy } from 'react-icons/md';
 import { 
   Dialog, 
   DialogContent, 
@@ -167,34 +168,45 @@ const PersonalDashboardPage: React.FC = () => {
       />
       
       {/* Quick Actions */}
-      <section className="mb-5">
-        <div className="grid grid-cols-4 gap-2">
-          <button className="flex flex-col items-center" onClick={() => setIsChamaOpen(true)}>
-            <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-1">
-              <span className="material-icons text-primary">groups</span>
-            </div>
-            <span className="text-xs">Chamas</span>
-          </button>
-          <button className="flex flex-col items-center" onClick={() => window.location.href = '/wallet'}>
-            <div className="w-12 h-12 rounded-full bg-secondary/10 flex items-center justify-center mb-1">
-              <span className="material-icons text-secondary">receipt_long</span>
-            </div>
-            <span className="text-xs">History</span>
-          </button>
-          <button className="flex flex-col items-center" onClick={() => window.location.href = '/marketplace'}>
-            <div className="w-12 h-12 rounded-full bg-accent/10 flex items-center justify-center mb-1">
-              <span className="material-icons text-accent-dark">store</span>
-            </div>
-            <span className="text-xs">Market</span>
-          </button>
-          <button className="flex flex-col items-center" onClick={() => window.location.href = '/ai-assistant'}>
-            <div className="w-12 h-12 rounded-full bg-primary-light/10 flex items-center justify-center mb-1">
-              <span className="material-icons text-primary-light">smart_toy</span>
-            </div>
-            <span className="text-xs">AI Help</span>
-          </button>
-        </div>
-      </section>
+      
+
+<section className="mb-5">
+  <div className="grid grid-cols-4 gap-6">
+    <button
+      className="flex flex-col items-center space-y-1"
+      onClick={() => setIsChamaOpen(true)}
+    >
+      <MdGroups className="text-4xl text-blue-600" />
+      <span className="text-sm font-semibold text-black">Chamas</span>
+    </button>
+
+    <button
+      className="flex flex-col items-center space-y-1"
+      onClick={() => (window.location.href = '/wallet')}
+    >
+      <MdReceiptLong className="text-4xl text-green-600" />
+      <span className="text-sm font-semibold text-black">History</span>
+    </button>
+
+    <button
+      className="flex flex-col items-center space-y-1"
+      onClick={() => (window.location.href = '/marketplace')}
+    >
+      <MdStore className="text-4xl text-yellow-500" />
+      <span className="text-sm font-semibold text-black">Market</span>
+    </button>
+
+    <button
+      className="flex flex-col items-center space-y-1"
+      onClick={() => (window.location.href = '/ai-assistant')}
+    >
+      <MdSmartToy className="text-4xl text-purple-600" />
+      <span className="text-sm font-semibold text-black">AI Help</span>
+    </button>
+  </div>
+</section>
+
+
       
       {/* My Chamas */}
       <ChamaList onCreateChama={() => setIsChamaOpen(true)} />
