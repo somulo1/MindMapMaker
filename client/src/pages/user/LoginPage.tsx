@@ -11,7 +11,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ redirectTo }) => {
       <header className="bg-white dark:bg-neutral-800 shadow-sm p-4">
         <div className="container mx-auto flex justify-center items-center">
           <div className="flex items-center space-x-2">
-            <span className="material-icons text-primary text-2xl">account_balance</span>
+            {/* <span className="material-icons text-primary text-2xl">account_balance</span> */}
             <h1 className="text-xl font-semibold text-primary">Tujifund</h1>
           </div>
         </div>

@@ -9,7 +9,7 @@ const HomePage: React.FC = () => {
       <header className="bg-white dark:bg-neutral-800 shadow-sm p-4">
         <div className="container mx-auto flex justify-between items-center">
           <div className="flex items-center space-x-2">
-            <span className="material-icons text-primary text-2xl">account_balance</span>
+            {/* <span className="material-icons text-primary text-2xl">account_balance</span> */}
             <h1 className="text-xl font-semibold text-primary">Tujifund</h1>
           </div>
           <div className="space-x-4">
@@ -66,7 +66,7 @@ const HomePage: React.FC = () => {
             </div>
             <div className="bg-neutral-50 dark:bg-neutral-700 p-6 rounded-xl">
               <div className="w-12 h-12 rounded-full bg-secondary/10 flex items-center justify-center mb-4">
-                <span className="material-icons text-secondary">account_balance_wallet</span>
+                {/* <span className="material-icons text-secondary">account_balance_wallet</span> */}
               </div>
               <h3 className="text-xl font-semibold mb-2">Manage Finances</h3>
               <p className="text-neutral-600 dark:text-neutral-300">
@@ -91,7 +91,7 @@ const HomePage: React.FC = () => {
         <div className="container mx-auto px-4">
           <div className="flex flex-col md:flex-row justify-between items-center">
             <div className="flex items-center space-x-2 mb-4 md:mb-0">
-              <span className="material-icons text-primary text-2xl">account_balance</span>
+              {/* <span className="material-icons text-primary text-2xl">account_balance</span> */}
               <h2 className="text-xl font-semibold text-primary">Tujifund</h2>
             </div>
             <div className="text-sm text-neutral-400">
