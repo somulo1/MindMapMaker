@@ -23,29 +23,78 @@ import {
 import { Chama, Contribution, Meeting } from "@shared/schema";
 import { getChama, getChamaMembers, getChamaContributions, getChamaMeetings } from "@/services/api";
 
-export default function ChamaDashboard() {
-  const { id } = useParams<{ id: string }>();
-  const chamaId = parseInt(id);
+interface ChamaDashboardProps {
+  id?: string;
+}
+
+export default function ChamaDashboard({ id: propId }: ChamaDashboardProps = {}) {
+  const params = useParams<{ id: string }>();
+  const chamaId = parseInt(propId || params?.id || '0');
   
   const { data: chama, isLoading: isChamaLoading } = useQuery<Chama>({
     queryKey: [`/api/chamas/${chamaId}`],
-    enabled: !isNaN(chamaId)
+    enabled: !isNaN(chamaId) && chamaId > 0,
+    queryFn: async () => {
+      const response = await getChama(chamaId);
+      return response.chama;
+    }
   });
 
   const { data: members = [], isLoading: isMembersLoading } = useQuery({
     queryKey: [`/api/chamas/${chamaId}/members`],
-    enabled: !isNaN(chamaId)
+    enabled: !isNaN(chamaId) && chamaId > 0,
+    queryFn: async () => {
+      const response = await getChamaMembers(chamaId);
+      return response.members;
+    }
   });
 
   const { data: contributions = [], isLoading: isContributionsLoading } = useQuery<Contribution[]>({
     queryKey: [`/api/chamas/${chamaId}/contributions`],
-    enabled: !isNaN(chamaId)
+    enabled: !isNaN(chamaId) && chamaId > 0,
+    queryFn: async () => {
+      const response = await getChamaContributions(chamaId);
+      return response.contributions;
+    }
   });
 
   const { data: meetings = [], isLoading: isMeetingsLoading } = useQuery<Meeting[]>({
     queryKey: [`/api/chamas/${chamaId}/meetings`],
-    enabled: !isNaN(chamaId)
+    enabled: !isNaN(chamaId) && chamaId > 0,
+    queryFn: async () => {
+      const response = await getChamaMeetings(chamaId);
+      return response.meetings;
+    }
   });
+
+  if (isChamaLoading || isMembersLoading || isContributionsLoading || isMeetingsLoading) {
+    return (
+      <ChamaLayout>
+        <div className="animate-pulse space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="h-32 bg-muted rounded-lg"></div>
+            <div className="h-32 bg-muted rounded-lg"></div>
+            <div className="h-32 bg-muted rounded-lg"></div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="h-64 bg-muted rounded-lg"></div>
+            <div className="h-64 bg-muted rounded-lg"></div>
+          </div>
+        </div>
+      </ChamaLayout>
+    );
+  }
+
+  if (!chama) {
+    return (
+      <ChamaLayout>
+        <div className="text-center py-8">
+          <h2 className="text-2xl font-bold text-destructive">Chama not found</h2>
+          <p className="text-muted-foreground mt-2">The chama you're looking for doesn't exist or you don't have access to it.</p>
+        </div>
+      </ChamaLayout>
+    );
+  }
 
   // Calculate chama statistics
   const totalMembers = members.length;
@@ -206,7 +255,7 @@ export default function ChamaDashboard() {
           </CardContent>
           <CardFooter>
             <Button variant="outline" className="w-full" asChild>
-              <a href={`/chama/${chamaId}/contributions`}>
+              <a href={`/chamas/${chamaId}/contributions`}>
                 <BarChart4 className="mr-2 h-4 w-4" />
                 View All Contributions
               </a>
@@ -280,17 +329,20 @@ export default function ChamaDashboard() {
                 </CardDescription>
               </div>
               <Button variant="outline" size="sm" asChild>
-                <a href={`/chama/${chamaId}/members`}>View All</a>
+                <a href={`/chamas/${chamaId}/members`}>View All</a>
               </Button>
             </div>
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {members.slice(0, 5).map((member: any) => (
+              {members.slice(0, 5).map((member: any) => {
+                if (!member?.user) return null;
+                
+                return (
                 <div key={member.id} className="flex justify-between items-center">
                   <div className="flex items-center">
                     <Avatar className="h-9 w-9 mr-2">
-                      <AvatarImage src="" alt={member.user.fullName} />
+                        <AvatarImage src={member.user.profilePic || ""} alt={member.user.fullName} />
                       <AvatarFallback>{getInitials(member.user.fullName)}</AvatarFallback>
                     </Avatar>
                     <div>
@@ -307,7 +359,8 @@ export default function ChamaDashboard() {
                     {member.role.charAt(0).toUpperCase() + member.role.slice(1)}
                   </Badge>
                 </div>
-              ))}
+                );
+              })}
             </div>
           </CardContent>
         </Card>

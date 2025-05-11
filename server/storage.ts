@@ -7,7 +7,11 @@ import {
   messages, type Message, type InsertMessage,
   learningResources, type LearningResource, type InsertLearningResource,
   marketplaceItems, type MarketplaceItem, type InsertMarketplaceItem,
-  aiConversations, type AiConversation, type InsertAiConversation
+  aiConversations, type AiConversation, type InsertAiConversation,
+  wishlistItems, type WishlistItem, type InsertWishlistItem,
+  carts, type CartItem, type InsertCartItem,
+  orders, type Order, type InsertOrder,
+  orderItems, type OrderItem, type InsertOrderItem
 } from "@shared/schema";
 
 // Define storage interface
@@ -69,6 +73,26 @@ export interface IStorage {
   getUserAiConversations(userId: number): Promise<AiConversation[]>;
   createAiConversation(conversation: InsertAiConversation): Promise<AiConversation>;
   updateAiConversation(id: number, conversation: Partial<AiConversation>): Promise<AiConversation | undefined>;
+
+  // Wishlist operations
+  getWishlistItem(userId: number, itemId: number): Promise<WishlistItem | undefined>;
+  getUserWishlist(userId: number): Promise<WishlistItem[]>;
+  addToWishlist(userId: number, itemId: number): Promise<WishlistItem>;
+  removeFromWishlist(userId: number, itemId: number): Promise<void>;
+
+  // Cart operations
+  getCartItem(userId: number, itemId: number): Promise<CartItem | undefined>;
+  getUserCart(userId: number): Promise<CartItem[]>;
+  addToCart(userId: number, itemId: number, quantity: number): Promise<CartItem>;
+  updateCartItem(userId: number, itemId: number, data: Partial<CartItem>): Promise<CartItem | undefined>;
+  removeFromCart(userId: number, itemId: number): Promise<void>;
+  clearUserCart(userId: number): Promise<void>;
+
+  // Order operations
+  createOrder(userId: number, totalAmount: number, items: { itemId: number; quantity: number; price: number }[]): Promise<Order>;
+  getOrder(id: number): Promise<Order | undefined>;
+  getUserOrders(userId: number): Promise<Order[]>;
+  getOrderItems(orderId: number): Promise<OrderItem[]>;
 }
 
 export class MemStorage implements IStorage {
@@ -81,6 +105,10 @@ export class MemStorage implements IStorage {
   private learningResources: Map<number, LearningResource>;
   private marketplaceItems: Map<number, MarketplaceItem>;
   private aiConversations: Map<number, AiConversation>;
+  private wishlistItems: Map<number, WishlistItem>;
+  private cartItems: Map<number, CartItem>;
+  private orders: Map<number, Order>;
+  private orderItems: Map<number, OrderItem>;
   
   private userIdCounter: number;
   private chamaIdCounter: number;
@@ -91,6 +119,10 @@ export class MemStorage implements IStorage {
   private learningResourceIdCounter: number;
   private marketplaceItemIdCounter: number;
   private aiConversationIdCounter: number;
+  private wishlistItemIdCounter: number = 1;
+  private cartItemIdCounter: number = 1;
+  private orderIdCounter: number = 1;
+  private orderItemIdCounter: number = 1;
 
   constructor() {
     this.users = new Map();
@@ -102,6 +134,10 @@ export class MemStorage implements IStorage {
     this.learningResources = new Map();
     this.marketplaceItems = new Map();
     this.aiConversations = new Map();
+    this.wishlistItems = new Map();
+    this.cartItems = new Map();
+    this.orders = new Map();
+    this.orderItems = new Map();
     
     this.userIdCounter = 1;
     this.chamaIdCounter = 1;
@@ -526,6 +562,134 @@ export class MemStorage implements IStorage {
     };
     this.aiConversations.set(id, updatedConversation);
     return updatedConversation;
+  }
+
+  // Wishlist operations
+  async getWishlistItem(userId: number, itemId: number): Promise<WishlistItem | undefined> {
+    return Array.from(this.wishlistItems.values()).find(
+      item => item.userId === userId && item.itemId === itemId
+    );
+  }
+
+  async getUserWishlist(userId: number): Promise<WishlistItem[]> {
+    return Array.from(this.wishlistItems.values())
+      .filter(item => item.userId === userId);
+  }
+
+  async addToWishlist(userId: number, itemId: number): Promise<WishlistItem> {
+    const id = this.wishlistItemIdCounter++;
+    const now = new Date();
+    const wishlistItem: WishlistItem = {
+      id,
+      userId,
+      itemId,
+      createdAt: now
+    };
+    this.wishlistItems.set(id, wishlistItem);
+    return wishlistItem;
+  }
+
+  async removeFromWishlist(userId: number, itemId: number): Promise<void> {
+    const wishlistItem = await this.getWishlistItem(userId, itemId);
+    if (wishlistItem) {
+      this.wishlistItems.delete(wishlistItem.id);
+    }
+  }
+
+  // Cart operations
+  async getCartItem(userId: number, itemId: number): Promise<CartItem | undefined> {
+    return Array.from(this.cartItems.values()).find(
+      item => item.userId === userId && item.itemId === itemId
+    );
+  }
+
+  async getUserCart(userId: number): Promise<CartItem[]> {
+    return Array.from(this.cartItems.values())
+      .filter(item => item.userId === userId);
+  }
+
+  async addToCart(userId: number, itemId: number, quantity: number): Promise<CartItem> {
+    const id = this.cartItemIdCounter++;
+    const now = new Date();
+    const cartItem: CartItem = {
+      id,
+      userId,
+      itemId,
+      quantity,
+      createdAt: now
+    };
+    this.cartItems.set(id, cartItem);
+    return cartItem;
+  }
+
+  async updateCartItem(userId: number, itemId: number, data: Partial<CartItem>): Promise<CartItem | undefined> {
+    const cartItem = await this.getCartItem(userId, itemId);
+    if (!cartItem) return undefined;
+    
+    const updatedCartItem: CartItem = { ...cartItem, ...data };
+    this.cartItems.set(cartItem.id, updatedCartItem);
+    return updatedCartItem;
+  }
+
+  async removeFromCart(userId: number, itemId: number): Promise<void> {
+    const cartItem = await this.getCartItem(userId, itemId);
+    if (cartItem) {
+      this.cartItems.delete(cartItem.id);
+    }
+  }
+
+  async clearUserCart(userId: number): Promise<void> {
+    const userCartItems = await this.getUserCart(userId);
+    userCartItems.forEach(item => {
+      this.cartItems.delete(item.id);
+    });
+  }
+
+  // Order operations
+  async createOrder(userId: number, totalAmount: number, items: { itemId: number; quantity: number; price: number }[]): Promise<Order> {
+    const orderId = this.orderIdCounter++;
+    const now = new Date();
+    
+    // Create order
+    const order: Order = {
+      id: orderId,
+      userId,
+      totalAmount,
+      currency: 'KES',
+      status: 'pending',
+      createdAt: now
+    };
+    this.orders.set(orderId, order);
+
+    // Create order items
+    items.forEach(item => {
+      const orderItemId = this.orderItemIdCounter++;
+      const orderItem: OrderItem = {
+        id: orderItemId,
+        orderId,
+        itemId: item.itemId,
+        quantity: item.quantity,
+        price: item.price,
+        createdAt: now
+      };
+      this.orderItems.set(orderItemId, orderItem);
+    });
+
+    return order;
+  }
+
+  async getOrder(id: number): Promise<Order | undefined> {
+    return this.orders.get(id);
+  }
+
+  async getUserOrders(userId: number): Promise<Order[]> {
+    return Array.from(this.orders.values())
+      .filter(order => order.userId === userId);
+  }
+
+  async getOrderItems(orderId: number): Promise<OrderItem[]> {
+    return Array.from(this.orderItems.values())
+      .filter(item => item.orderId === orderId);
   }
 }
 

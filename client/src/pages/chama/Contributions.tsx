@@ -30,9 +30,10 @@ import {
   Loader2
 } from "lucide-react";
 import { queryClient } from "@/lib/queryClient";
-import { getChamaContributions, getChamaMembers, createContribution, payContribution } from "@/services/api";
-import { Contribution } from "@shared/schema";
+import { getChamaContributions, getChamaMembers, createContribution, payContribution, transferToChama, getChamaWallet } from "@/services/api";
+import { Contribution, ChamaMember } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
+import { formatCurrency } from "@/lib/utils";
 
 // Form schema for creating a new contribution
 const contributionSchema = z.object({
@@ -54,14 +55,24 @@ export default function ChamaContributions() {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [openNewContributionDialog, setOpenNewContributionDialog] = useState(false);
+  const [isProcessingPayment, setIsProcessingPayment] = useState(false);
   
   const { data: contributions = [], isLoading: isContributionsLoading } = useQuery<Contribution[]>({
     queryKey: [`/api/chamas/${chamaId}/contributions`],
+    queryFn: () => getChamaContributions(chamaId),
     enabled: !isNaN(chamaId)
   });
 
-  const { data: members = [], isLoading: isMembersLoading } = useQuery({
+  const { data: members = [], isLoading: isMembersLoading } = useQuery<ChamaMember[]>({
     queryKey: [`/api/chamas/${chamaId}/members`],
+    queryFn: () => getChamaMembers(chamaId),
+    enabled: !isNaN(chamaId)
+  });
+
+  // Get chama wallet
+  const { data: chamaWallet } = useQuery({
+    queryKey: [`/api/chamas/${chamaId}/wallet`],
+    queryFn: () => getChamaWallet(chamaId),
     enabled: !isNaN(chamaId)
   });
 
@@ -71,7 +82,7 @@ export default function ChamaContributions() {
     defaultValues: {
       memberId: "",
       amount: "",
-      dueDate: new Date().toISOString().split('T')[0], // Today's date as default
+      dueDate: new Date().toISOString().split('T')[0],
     },
   });
 
@@ -103,16 +114,26 @@ export default function ChamaContributions() {
     },
   });
 
-  // Mutation for paying a contribution
+  // Mutation for paying a contribution with wallet transfer
   const payContributionMutation = useMutation({
-    mutationFn: (contributionId: number) => {
-      return payContribution(contributionId);
+    mutationFn: async ({ contributionId, amount }: { contributionId: number; amount: number }) => {
+      setIsProcessingPayment(true);
+      try {
+        // First transfer the money to the chama
+        await transferToChama(chamaId, amount, `Payment for contribution #${contributionId}`);
+        
+        // Then mark the contribution as paid
+        return await payContribution(contributionId);
+      } finally {
+        setIsProcessingPayment(false);
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/chamas/${chamaId}/contributions`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/chamas/${chamaId}/wallet`] });
       toast({
         title: "Payment successful",
-        description: "The contribution has been marked as paid.",
+        description: "The contribution has been marked as paid and the amount has been transferred to the chama.",
       });
     },
     onError: (error) => {
@@ -185,6 +206,20 @@ export default function ChamaContributions() {
     }
   };
 
+  // Handle contribution payment
+  const handlePayContribution = async (contribution: Contribution) => {
+    if (!contribution) return;
+    
+    try {
+      await payContributionMutation.mutateAsync({
+        contributionId: contribution.id,
+        amount: parseFloat(contribution.amount.toString())
+      });
+    } catch (error) {
+      console.error('Error paying contribution:', error);
+    }
+  };
+
   return (
     <ChamaLayout>
       <div className="mb-6">
@@ -227,12 +262,12 @@ export default function ChamaContributions() {
                               </SelectTrigger>
                             </FormControl>
                             <SelectContent>
-                              {members.map((member: any) => (
+                              {members.map((member) => (
                                 <SelectItem 
                                   key={member.userId} 
                                   value={member.userId.toString()}
                                 >
-                                  {member.user.fullName}
+                                  Member {member.userId}
                                 </SelectItem>
                               ))}
                             </SelectContent>
@@ -355,6 +390,28 @@ export default function ChamaContributions() {
         </Card>
       </div>
       
+      {/* Add wallet balance display */}
+      {chamaWallet && (
+        <Card className="mb-6">
+          <CardContent className="p-6">
+            <div className="flex justify-between items-center">
+              <div>
+                <h3 className="text-lg font-semibold">Chama Wallet</h3>
+                <p className="text-2xl font-bold">
+                  {formatCurrency(parseFloat(chamaWallet.balance.toString()), chamaWallet.currency)}
+                </p>
+              </div>
+              <div className="text-right">
+                <p className="text-sm text-muted-foreground">Total Balance</p>
+                <p className="text-sm text-muted-foreground">
+                  Last updated: {new Date(chamaWallet.updatedAt).toLocaleDateString()}
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+      
       {/* Contribution Listing */}
       <Card>
         <CardHeader className="pb-3">
@@ -439,9 +496,9 @@ export default function ChamaContributions() {
               </div>
               
               {filteredContributions.map((contribution) => {
-                // Find member details - in a real app this would be properly joined
-                const member = members.find((m: any) => m.userId === contribution.userId);
-                const memberName = member?.user?.fullName || "Member";
+                // Find member details
+                const member = members.find(m => m.userId === contribution.userId);
+                const memberName = member ? `Member ${member.userId}` : "Unknown Member";
                 
                 return (
                   <div key={contribution.id} className="grid grid-cols-12 p-3 border-t hover:bg-muted/50">
@@ -481,13 +538,21 @@ export default function ChamaContributions() {
                         <Button 
                           variant="ghost" 
                           size="sm"
-                          onClick={() => payContributionMutation.mutate(contribution.id)}
-                          disabled={payContributionMutation.isPending}
+                          onClick={() => handlePayContribution(contribution)}
+                          disabled={isProcessingPayment || contribution.status === "paid"}
                         >
-                          {payContributionMutation.isPending ? (
+                          {isProcessingPayment ? (
                             <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : contribution.status === "paid" ? (
+                            <>
+                              <CheckCircle className="mr-2 h-4 w-4" />
+                              Paid
+                            </>
                           ) : (
-                            <CreditCard className="h-4 w-4" />
+                            <>
+                              <CreditCard className="h-4 w-4" />
+                              Pay Now
+                            </>
                           )}
                         </Button>
                       ) : null}

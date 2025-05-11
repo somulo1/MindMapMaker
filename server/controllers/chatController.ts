@@ -89,7 +89,8 @@ export async function createMessage(req: Request, res: Response) {
   const messageSchema = z.object({
     content: z.string().min(1),
     receiverId: z.number().optional(),
-    chamaId: z.number().optional()
+    chamaId: z.number().optional(),
+    itemId: z.number().optional()
   }).refine(data => data.receiverId !== undefined || data.chamaId !== undefined, {
     message: "Either receiverId or chamaId must be provided",
     path: ["receiverId"]
@@ -102,6 +103,14 @@ export async function createMessage(req: Request, res: Response) {
     const membership = await storage.getChamaMember(validatedData.chamaId, userId);
     if (!membership) {
       return res.status(403).json({ message: "You are not a member of this chama" });
+    }
+  }
+
+  // If it's a marketplace message, verify the item exists
+  if (validatedData.itemId) {
+    const item = await storage.getMarketplaceItem(validatedData.itemId);
+    if (!item) {
+      return res.status(404).json({ message: "Item not found" });
     }
   }
   
