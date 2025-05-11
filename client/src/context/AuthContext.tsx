@@ -33,7 +33,17 @@ interface RegisterData {
   phoneNumber?: string;
 }
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
+const defaultContext: AuthContextType = {
+  isAuthenticated: false,
+  user: null,
+  login: async () => {},
+  register: async () => {},
+  logout: async () => {},
+  isLoading: true,
+  error: null,
+};
+
+const AuthContext = createContext<AuthContextType>(defaultContext);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [error, setError] = useState<string | null>(null);
@@ -131,9 +141,5 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 }
 
 export function useAuth() {
-  const context = useContext(AuthContext);
-  if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
-  return context;
+  return useContext(AuthContext);
 }

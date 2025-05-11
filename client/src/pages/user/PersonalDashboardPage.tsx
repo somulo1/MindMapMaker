@@ -220,7 +220,7 @@ const PersonalDashboardPage: React.FC = () => {
           </Button>
         </div>
         
-        <TransactionList limit={3} showViewAll={false} />
+        <TransactionList limit={6} showViewAll={false} />
       </section>
       
       {/* Learning Hub Preview */}

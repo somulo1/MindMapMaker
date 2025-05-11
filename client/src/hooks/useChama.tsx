@@ -83,7 +83,11 @@ export function useChama() {
     mutationFn: async (chamaData: CreateChamaData) => {
       try {
         const res = await apiRequest('POST', '/api/chamas', chamaData);
-        return await res.json();
+        const data = await res.json();
+        if (!data.chama) {
+          throw new Error('Invalid response from server');
+        }
+        return data;
       } catch (error: any) {
         throw new Error(error.message || 'Failed to create chama');
       }
@@ -97,6 +101,8 @@ export function useChama() {
         
         // Navigate to the new chama's details page
         setLocation(`/chamas/${data.chama.id}`);
+      } else {
+        throw new Error('Failed to get chama ID from response');
       }
       
       setError(null);

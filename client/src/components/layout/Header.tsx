@@ -60,6 +60,7 @@ export default function Header({ toggleSidebar, openNotifications, title = "Cham
             size="icon" 
             className="relative" 
             onClick={openNotifications}
+            
           >
             <Bell className="h-5 w-5" />
             {notifications > 0 && (
@@ -67,6 +68,9 @@ export default function Header({ toggleSidebar, openNotifications, title = "Cham
                 {notifications}
               </span>
             )}
+                            <Link to="/settings">
+                  Settings
+                </Link>
             <span className="sr-only">Notifications</span>
           </Button>
           

@@ -20,6 +20,8 @@ import * as marketplaceController from "./controllers/marketplaceController";
 import * as learningController from "./controllers/learningController";
 import * as aiController from "./controllers/aiController";
 import * as chatController from "./controllers/chatController";
+import * as wishlistController from "./controllers/wishlistController";
+import * as cartController from "./controllers/cartController";
 
 const SessionStore = MemoryStore(session);
 
@@ -129,8 +131,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Wishlist routes
+  app.get("/api/wishlist", handleErrors(wishlistController.getUserWishlist));
+  app.post("/api/wishlist/:itemId", handleErrors(wishlistController.addToWishlist));
+  app.delete("/api/wishlist/:itemId", handleErrors(wishlistController.removeFromWishlist));
 
-
+  // Cart routes
+  app.get("/api/cart", handleErrors(cartController.getUserCart));
+  app.post("/api/cart", handleErrors(cartController.addToCart));
+  app.put("/api/cart/:itemId", handleErrors(cartController.updateCartItem));
+  app.delete("/api/cart/:itemId", handleErrors(cartController.removeFromCart));
+  app.post("/api/cart/checkout", handleErrors(cartController.checkoutCart));
   
   // Auth routes
   app.post("/api/auth/register", handleErrors(authController.register));
