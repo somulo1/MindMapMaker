@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiRequest } from '@/lib/queryClient';
 import { useAuth } from '@/context/AuthContext';
+import {fetchUser} from "@/sdk/api/auth/users.ts";
 
 interface Wallet {
   id: number;
@@ -96,6 +97,20 @@ export function useWallet() {
       description: description || 'Transfer to user'
     });
   };
+
+  // Transfer funds to another user
+  const transferByUsernameOrEmail = async (
+      amount: number,
+      destinationUsernameOrEmail: string,
+      description?: string) => {
+    const user = await fetchUser({username: destinationUsernameOrEmail});
+    return createTransactionMutation.mutateAsync({
+      type: 'transfer',
+      amount,
+      destinationUserId: user?.id,
+      description: description || 'Transfer to user'
+    });
+  };
   
   // Contribute to chama
   const contribute = async (amount: number, chamaId: number, description?: string) => {
@@ -113,6 +128,7 @@ export function useWallet() {
     deposit,
     withdraw,
     transfer,
+    transferByUsernameOrEmail,
     contribute,
     isLoading: isLoadingUserWallet || isLoadingUserTransactions || createTransactionMutation.isPending,
     error
