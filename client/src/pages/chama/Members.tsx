@@ -95,9 +95,11 @@ export default function ChamaMembers() {
 
   // Filter members based on search query
   const filteredMembers = members.filter((member: any) => {
-    const name = member.user.fullName.toLowerCase();
-    const email = member.user.email.toLowerCase();
-    const role = member.role.toLowerCase();
+    if (!member?.user) return false;
+    
+    const name = member.user.fullName?.toLowerCase() || '';
+    const email = member.user.email?.toLowerCase() || '';
+    const role = member.role?.toLowerCase() || '';
     const query = searchQuery.toLowerCase();
     
     return name.includes(query) || email.includes(query) || role.includes(query);
@@ -278,87 +280,59 @@ export default function ChamaMembers() {
           <CardDescription>{members.length} members in this chama</CardDescription>
         </CardHeader>
         <CardContent>
-          {isLoading ? (
-            <div className="flex justify-center items-center h-64">
-              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          <div className="grid gap-6">
+            {filteredMembers.map((member: any) => {
+              if (!member?.user) return null;
+              
+              return (
+                <Card key={member.id}>
+                  <CardContent className="p-6">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-4">
+                        <Avatar>
+                          <AvatarImage src={member.user.profilePic || ""} alt={member.user.fullName} />
+                          <AvatarFallback>{getInitials(member.user.fullName)}</AvatarFallback>
+                        </Avatar>
+                        <div>
+                          <h3 className="font-medium">{member.user.fullName}</h3>
+                          <p className="text-sm text-muted-foreground">{member.user.email}</p>
             </div>
-          ) : filteredMembers.length === 0 ? (
-            <div className="text-center py-8">
-              <UserPlus className="h-12 w-12 mx-auto text-muted-foreground mb-3" />
-              <h3 className="text-lg font-medium mb-2">No Members Found</h3>
-              <p className="text-muted-foreground mb-4">
-                {searchQuery ? 
-                  "No members match your search query." : 
-                  "This chama doesn't have any members yet."}
-              </p>
-              {searchQuery ? (
-                <Button variant="outline" onClick={() => setSearchQuery("")}>
-                  Clear Search
-                </Button>
-              ) : (
-                <Button onClick={() => setOpenAddMemberDialog(true)}>
-                  <UserPlus className="h-4 w-4 mr-2" />
-                  Add First Member
-                </Button>
-              )}
-            </div>
-          ) : (
-            <div className="rounded-md border">
-              <div className="grid grid-cols-12 p-3 bg-muted text-xs font-medium">
-                <div className="col-span-5 md:col-span-4">Member</div>
-                <div className="col-span-5 md:col-span-3 hidden md:block">Contact</div>
-                <div className="col-span-3 md:col-span-2 text-center">Role</div>
-                <div className="col-span-3 md:col-span-2 text-center">Status</div>
-                <div className="col-span-1 text-right"></div>
               </div>
               
-              {filteredMembers.map((member: any) => (
-                <div 
-                  key={member.id} 
-                  className="grid grid-cols-12 p-3 border-t hover:bg-muted/50 cursor-pointer transition-colors"
+                      <div className="flex items-center gap-4">
+                        <Badge className={getRoleBadgeStyles(member.role)}>
+                          {member.role}
+                        </Badge>
+                        <Button
+                          variant="ghost"
+                          size="icon"
                   onClick={() => {
                     setSelectedMember(member);
                     setIsDetailsOpen(true);
                   }}
                 >
-                  <div className="col-span-5 md:col-span-4 flex items-center gap-3">
-                    <Avatar className="h-8 w-8">
-                      <AvatarImage src="" alt={member.user.fullName} />
-                      <AvatarFallback>{getInitials(member.user.fullName)}</AvatarFallback>
-                    </Avatar>
-                    <div className="truncate">
-                      <p className="font-medium text-sm truncate">{member.user.fullName}</p>
-                      <p className="text-xs text-muted-foreground truncate hidden md:block">
-                        @{member.user.username}
-                      </p>
-                    </div>
-                  </div>
-                  
-                  <div className="col-span-5 md:col-span-3 items-center hidden md:flex">
-                    <p className="text-sm truncate">{member.user.email}</p>
-                  </div>
-                  
-                  <div className="col-span-3 md:col-span-2 flex justify-center items-center">
-                    <Badge className={getRoleBadgeStyles(member.role)}>
-                      {member.role.charAt(0).toUpperCase() + member.role.slice(1)}
-                    </Badge>
-                  </div>
-                  
-                  <div className="col-span-3 md:col-span-2 flex justify-center items-center">
-                    <Badge variant="outline" className="bg-success/10 text-success">
-                      Active
-                    </Badge>
-                  </div>
-                  
-                  <div className="col-span-1 flex justify-end items-center">
-                    <Button variant="ghost" size="icon">
                       <MoreHorizontal className="h-4 w-4" />
                     </Button>
                   </div>
                 </div>
-              ))}
+                  </CardContent>
+                </Card>
+              );
+            })}
+            
+            {isLoading && (
+              <div className="text-center py-8">
+                <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4" />
+                <p className="text-muted-foreground">Loading members...</p>
+              </div>
+            )}
+            
+            {!isLoading && filteredMembers.length === 0 && (
+              <div className="text-center py-8">
+                <p className="text-muted-foreground">No members found</p>
             </div>
           )}
+          </div>
         </CardContent>
       </Card>
       

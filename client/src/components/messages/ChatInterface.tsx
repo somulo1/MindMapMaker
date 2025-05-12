@@ -35,13 +35,55 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
   const [inputValue, setInputValue] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   
-  // Filter messages based on the selected recipient or chama
+  // Debug logs for message analysis
+  useEffect(() => {
+    // console.log('=== Message Analysis ===');
+    // console.log('Current User:', {
+    //   id: user?.id,
+    //   name: user?.username || user?.fullName
+    // });
+    // console.log('Chat Partner:', {
+    //   id: receiverId,
+    //   name: recipientName
+    // });
+    // console.log('All Messages:', messages.map(msg => ({
+    //   id: msg.id,
+    //   content: msg.content,
+    //   sender: {
+    //     id: msg.senderId,
+    //     name: msg.sender?.username || msg.sender?.fullName
+    //   },
+    //   receiver: {
+    //     id: msg.receiverId,
+    //     name: msg.receiver?.username || msg.receiver?.fullName
+    //   },
+    //   sentAt: msg.sentAt
+    // })));
+  }, [messages, user, receiverId, recipientName]);
+  
+  // Filter messages for this conversation
   const filteredMessages = isChama
     ? chamaMessages
-    : messages.filter(msg => 
-        (msg.senderId === user?.id && msg.receiverId === receiverId) || 
-        (msg.receiverId === user?.id && msg.senderId === receiverId)
-      );
+    : messages.filter(msg => {
+        // Only show messages between current user and the selected receiver
+        const isInThisConversation = 
+          (msg.senderId === user?.id && msg.receiverId === receiverId) || 
+          (msg.receiverId === user?.id && msg.senderId === receiverId);
+        
+          //  used to show chart logs. 
+          
+        // console.log('Message Filter:', {
+        //   messageId: msg.id,
+        //   content: msg.content,
+        //   senderId: msg.senderId,
+        //   receiverId: msg.receiverId,
+        //   currentUserId: user?.id,
+        //   targetReceiverId: receiverId,
+        //   isInThisConversation
+        // });
+        
+        return isInThisConversation;
+      });
   
   // Sort messages by date
   const sortedMessages = [...filteredMessages].sort(
@@ -67,6 +109,12 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
   const handleSendMessage = () => {
     if (!inputValue.trim()) return;
     
+    // console.log('Sending message:', {
+    //   content: inputValue,
+    //   to: isChama ? `Chama ${chamaId}` : `User ${receiverId}`,
+    //   isChama
+    // });
+    
     if (isChama && chamaId) {
       sendChamaMessage(inputValue);
     } else if (receiverId) {
@@ -88,6 +136,24 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
       dateStyle: 'medium',
       timeStyle: 'short',
     });
+  };
+  
+  const getSenderDisplayName = (message: any) => {
+    if (message.senderId === user?.id) return 'ME';
+    if (!message.sender) return `User ${message.senderId}`;
+    return 'type' in message.sender ? message.sender.name : 
+           'username' in message.sender ? message.sender.username :
+           'fullName' in message.sender ? message.sender.fullName :
+           `User ${message.senderId}`;
+  };
+  
+  const getSenderInitials = (message: any) => {
+    if (!message.sender) return 'U';
+    const name = 'type' in message.sender ? message.sender.name :
+                 'username' in message.sender ? message.sender.username :
+                 'fullName' in message.sender ? message.sender.fullName :
+                 'U';
+    return name.substring(0, 2).toUpperCase();
   };
   
   return (
@@ -132,45 +198,51 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
           <div className="space-y-4">
             {sortedMessages.map((message, index) => {
               const isCurrentUser = message.senderId === user?.id;
-              const senderName = isCurrentUser 
-                ? 'You' 
-                : message.sender?.fullName || message.sender?.username || `User ${message.senderId}`;
+              const senderName = getSenderDisplayName(message);
+              const showSenderInfo = isChama || 
+                (index > 0 && sortedMessages[index - 1].senderId !== message.senderId);
               
+              // console.log('Rendering message:', {
+              //   messageId: message.id,
+              //   content: message.content,
+              //   from: senderName,
+              //   to: isCurrentUser ? recipientName : 'You',
+              //   sentAt: message.sentAt
+              // });
+
               return (
                 <div 
                   key={message.id} 
-                  className={`flex ${isCurrentUser ? 'justify-end' : 'justify-start'}`}
+                  className={`flex ${isCurrentUser ? 'justify-end' : 'justify-start'} mb-4`}
                 >
-                  <div className="max-w-[75%]">
-                    {/* Sender info - only show in group chats or when sender changes */}
-                    {(isChama || (index > 0 && sortedMessages[index - 1].senderId !== message.senderId)) && !isCurrentUser && (
-                      <div className="ml-10 mb-1">
+                  <div className={`max-w-[75%] ${isCurrentUser ? 'mr-2' : 'ml-2'}`}>
+                    {/* Sender info */}
+                    {showSenderInfo && (
+                      <div className={`mb-1 ${isCurrentUser ? 'text-right' : 'text-left'}`}>
                         <span className="text-xs font-medium text-neutral-600 dark:text-neutral-400">
-                          {senderName}
+                          {senderName}s
                         </span>
                       </div>
                     )}
                     
-                    <div className="flex items-start">
-                      {!isCurrentUser && (
-                        <Avatar
-                          src={message.sender?.profilePic}
-                          fallback={(message.sender?.fullName || message.sender?.username || 'U').substring(0, 2).toUpperCase()}
-                          size="sm"
-                          className="mr-2 mt-1"
-                        />
-                      )}
+                    <div className={`flex items-start ${isCurrentUser ? 'flex-row' : 'flex-row-reverse'}`}>
+                      <Avatar
+                        src={message.sender?.profilePic}
+                        fallback={getSenderInitials(message)}
+                        size="sm"
+                        className={`${isCurrentUser ? 'ml-2' : 'mr-2'} mt-1`}
+                      />
                       
                       <div className={`rounded-lg p-3 ${
                         isCurrentUser 
-                          ? 'bg-primary text-primary-foreground rounded-tr-none' 
-                          : 'bg-white dark:bg-neutral-800 rounded-tl-none'
+                          ? 'bg-blue-100 dark:bg-blue-900 text-blue-900 dark:text-blue-100 rounded-tr-none' 
+                          : 'bg-green-100 dark:bg-green-900 text-green-900 dark:text-green-100 rounded-tl-none'
                       }`}>
-                        <p className="whitespace-pre-wrap">{message.content}</p>
+                        <p className="whitespace-pre-wrap break-words">{message.content}</p>
                         <p className={`text-xs mt-1 ${
                           isCurrentUser 
-                            ? 'text-primary-foreground/70' 
-                            : 'text-neutral-500 dark:text-neutral-400'
+                            ? 'text-blue-600 dark:text-blue-300' 
+                            : 'text-green-600 dark:text-green-300'
                         }`}>
                           {renderMessageDate(message.sentAt)}
                         </p>

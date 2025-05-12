@@ -22,9 +22,14 @@ export async function createChama(req: Request, res: Response) {
   
   const newChama = await storage.createChama(validatedData);
   
+  // Return the chama object in the expected structure
   return res.status(201).json({
     message: "Chama created successfully",
-    chama: newChama
+    chama: {
+      ...newChama,
+      icon: validatedData.icon || "groups",
+      iconBg: validatedData.iconBg || "primary"
+    }
   });
 }
 

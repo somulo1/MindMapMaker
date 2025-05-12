@@ -87,7 +87,7 @@ const MarketplacePage: React.FC = () => {
   );
   
   const content = (
-    <div className={isMobile ? "p-4" : ""}>
+    <div className={isMobile ? "p-4" : "" }>
       {/* Header with search and add button */}
       <div className="flex flex-col md:flex-row items-center justify-between mb-6 gap-4">
         <div className="relative w-full md:w-72">

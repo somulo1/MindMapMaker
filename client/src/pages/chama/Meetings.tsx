@@ -1,291 +1,545 @@
 import { useState } from "react";
 import { useParams } from "wouter";
-import { useQuery } from "@tanstack/react-query";
-import { formatDistanceToNow } from "date-fns";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
 import ChamaLayout from "@/components/layout/ChamaLayout";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { 
-  Dialog, 
-  DialogContent, 
-  DialogDescription, 
-  DialogFooter, 
-  DialogHeader, 
-  DialogTitle, 
-  DialogTrigger 
-} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { CalendarIcon, Clock, FileText, Send, Upload, AlertCircle, CheckCircle, Loader2 } from "lucide-react";
 import { format } from "date-fns";
-import { Calendar as CalendarIcon, MapPin, Users, Clock, Plus } from "lucide-react";
-import { Meeting } from "@shared/schema";
+import { queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
+import { cn } from "@/lib/utils";
+
+// Form schemas
+const meetingSchema = z.object({
+  title: z.string().min(1, "Title is required"),
+  description: z.string().min(1, "Description is required"),
+  date: z.date(),
+  time: z.string().min(1, "Time is required"),
+  location: z.string().min(1, "Location is required"),
+  agenda: z.string().min(1, "Agenda is required"),
+});
+
+const minutesSchema = z.object({
+  meetingId: z.number(),
+  content: z.string().min(1, "Minutes content is required"),
+  file: z.instanceof(File).optional(),
+});
+
+type MeetingFormValues = z.infer<typeof meetingSchema>;
+type MinutesFormValues = z.infer<typeof minutesSchema>;
 
 export default function ChamaMeetings() {
   const { id } = useParams<{ id: string }>();
   const chamaId = parseInt(id);
-  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
-  const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined);
+  const { toast } = useToast();
   
-  // Form state
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const [location, setLocation] = useState("");
-  const [time, setTime] = useState("");
+  const [openNewMeetingDialog, setOpenNewMeetingDialog] = useState(false);
+  const [openUploadMinutesDialog, setOpenUploadMinutesDialog] = useState(false);
+  const [selectedMeeting, setSelectedMeeting] = useState<number | null>(null);
   
-  const { data: meetings = [], isLoading } = useQuery<Meeting[]>({
+  // Queries
+  const { data: meetings = [], isLoading: isMeetingsLoading } = useQuery({
     queryKey: [`/api/chamas/${chamaId}/meetings`],
+    queryFn: async () => {
+      try {
+        const response = await fetch(`/api/chamas/${chamaId}/meetings`);
+        if (!response.ok) {
+          throw new Error('Failed to fetch meetings');
+        }
+        const data = await response.json();
+        return data || []; // Ensure we always return an array
+      } catch (error) {
+        console.error('Error fetching meetings:', error);
+        return []; // Return empty array on error
+      }
+    },
     enabled: !isNaN(chamaId)
   });
 
-  // Filter meetings into upcoming and past
-  const now = new Date();
-  const upcomingMeetings = meetings
-    .filter(meeting => new Date(meeting.scheduledFor) > now)
-    .sort((a, b) => new Date(a.scheduledFor).getTime() - new Date(b.scheduledFor).getTime());
-  
-  const pastMeetings = meetings
-    .filter(meeting => new Date(meeting.scheduledFor) <= now)
-    .sort((a, b) => new Date(b.scheduledFor).getTime() - new Date(a.scheduledFor).getTime());
+  // Mutations
+  const createMeetingMutation = useMutation({
+    mutationFn: async (data: MeetingFormValues) => {
+      const response = await fetch(`/api/chamas/${chamaId}/meetings`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Failed to create meeting');
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/chamas/${chamaId}/meetings`] });
+      toast({
+        title: "Meeting scheduled",
+        description: "The meeting has been successfully scheduled.",
+      });
+      setOpenNewMeetingDialog(false);
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Failed to schedule meeting",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
 
-  const handleCreateMeeting = () => {
-    if (!selectedDate || !time || !title) return;
-    
-    const [hours, minutes] = time.split(':').map(Number);
-    const scheduledFor = new Date(selectedDate);
-    scheduledFor.setHours(hours, minutes);
-    
-    // Here you would call your API to create the meeting
-    console.log("Creating meeting", {
-      title,
-      description,
-      location,
-      scheduledFor
-    });
-    
-    // Reset form
-    setTitle("");
-    setDescription("");
-    setLocation("");
-    setTime("");
-    setSelectedDate(undefined);
-    setIsCreateDialogOpen(false);
+  const sendReminderMutation = useMutation({
+    mutationFn: async (meetingId: number) => {
+      const response = await fetch(`/api/chamas/${chamaId}/meetings/${meetingId}/remind`, {
+        method: 'POST',
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Failed to send reminder');
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      toast({
+        title: "Reminder sent",
+        description: "Meeting reminder has been sent to all members.",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Failed to send reminder",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const uploadMinutesMutation = useMutation({
+    mutationFn: async (data: MinutesFormValues) => {
+      const formData = new FormData();
+      formData.append('content', data.content);
+      if (data.file) formData.append('file', data.file);
+
+      const response = await fetch(`/api/chamas/${chamaId}/meetings/${data.meetingId}/minutes`, {
+        method: 'POST',
+        body: formData,
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Failed to upload minutes');
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/chamas/${chamaId}/meetings`] });
+      toast({
+        title: "Minutes uploaded",
+        description: "Meeting minutes have been successfully uploaded.",
+      });
+      setOpenUploadMinutesDialog(false);
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Failed to upload minutes",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Forms
+  const meetingForm = useForm<MeetingFormValues>({
+    resolver: zodResolver(meetingSchema),
+    defaultValues: {
+      title: "",
+      description: "",
+      date: new Date(),
+      time: "",
+      location: "",
+      agenda: "",
+    },
+  });
+
+  const minutesForm = useForm<MinutesFormValues>({
+    resolver: zodResolver(minutesSchema),
+    defaultValues: {
+      meetingId: 0,
+      content: "",
+    },
+  });
+
+  // Handlers
+  const onNewMeetingSubmit = (data: MeetingFormValues) => {
+    createMeetingMutation.mutate(data);
+  };
+
+  const onUploadMinutesSubmit = (data: MinutesFormValues) => {
+    if (selectedMeeting) {
+      uploadMinutesMutation.mutate({ ...data, meetingId: selectedMeeting });
+    }
+  };
+
+  const handleSendReminder = (meetingId: number) => {
+    sendReminderMutation.mutate(meetingId);
+  };
+
+  const handleUploadMinutes = (meetingId: number) => {
+    setSelectedMeeting(meetingId);
+    setOpenUploadMinutesDialog(true);
   };
 
   return (
     <ChamaLayout>
-      <div className="flex justify-between items-center mb-6">
+      <div className="mb-6">
+        <div className="flex flex-col md:flex-row justify-between md:items-center gap-4">
         <div>
-          <h2 className="text-2xl font-semibold">Meetings</h2>
-          <p className="text-muted-foreground">Schedule and manage chama meetings</p>
+            <h2 className="text-xl font-semibold">Meetings</h2>
+            <p className="text-muted-foreground">
+              Schedule and manage chama meetings
+            </p>
+          </div>
+          
+          <Button onClick={() => setOpenNewMeetingDialog(true)}>
+            <CalendarIcon className="h-4 w-4 mr-2" />
+            Schedule Meeting
+          </Button>
+        </div>
         </div>
         
-        <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
-          <DialogTrigger asChild>
-            <Button>
-              <Plus className="mr-2 h-4 w-4" />
-              New Meeting
+      {/* Meetings List */}
+      <div className="grid gap-6">
+        {isMeetingsLoading ? (
+          <div className="flex justify-center items-center h-64">
+            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          </div>
+        ) : meetings.length === 0 ? (
+          <Card>
+            <CardContent className="flex flex-col items-center justify-center py-12">
+              <CalendarIcon className="h-12 w-12 text-muted-foreground mb-4" />
+              <h3 className="text-lg font-medium mb-2">No Meetings Scheduled</h3>
+              <p className="text-muted-foreground mb-4">
+                Schedule your first chama meeting to get started.
+              </p>
+              <Button onClick={() => setOpenNewMeetingDialog(true)}>
+                <CalendarIcon className="h-4 w-4 mr-2" />
+                Schedule Meeting
+              </Button>
+            </CardContent>
+          </Card>
+        ) : (
+          meetings.map((meeting: any) => (
+            <Card key={meeting.id}>
+              <CardHeader>
+                <div className="flex justify-between items-start">
+                  <div>
+                    <CardTitle>{meeting.title}</CardTitle>
+                    <CardDescription>
+                      {format(new Date(meeting.date), "MMMM d, yyyy")} at {meeting.time}
+                    </CardDescription>
+                  </div>
+                  <Badge variant={meeting.status === "upcoming" ? "default" : "secondary"}>
+                    {meeting.status}
+                  </Badge>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  <div>
+                    <h4 className="font-medium mb-1">Description</h4>
+                    <p className="text-sm text-muted-foreground">{meeting.description}</p>
+                  </div>
+                  <div>
+                    <h4 className="font-medium mb-1">Location</h4>
+                    <p className="text-sm text-muted-foreground">{meeting.location}</p>
+                  </div>
+                  <div>
+                    <h4 className="font-medium mb-1">Agenda</h4>
+                    <p className="text-sm text-muted-foreground">{meeting.agenda}</p>
+                  </div>
+                  {meeting.minutes && (
+                    <div>
+                      <h4 className="font-medium mb-1">Minutes</h4>
+                      <p className="text-sm text-muted-foreground">{meeting.minutes.content}</p>
+                      {meeting.minutes.file && (
+                        <Button variant="link" className="p-0 h-auto">
+                          <FileText className="h-4 w-4 mr-2" />
+                          View Minutes Document
+                        </Button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+              <CardFooter className="flex justify-end gap-2">
+                {meeting.status === "upcoming" && (
+                  <Button
+                    variant="outline"
+                    onClick={() => handleSendReminder(meeting.id)}
+                    disabled={sendReminderMutation.isPending}
+                  >
+                    {sendReminderMutation.isPending ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <Send className="h-4 w-4 mr-2" />
+                    )}
+                    Send Reminder
+                  </Button>
+                )}
+                {!meeting.minutes && (
+                  <Button
+                    variant="outline"
+                    onClick={() => handleUploadMinutes(meeting.id)}
+                  >
+                    <Upload className="h-4 w-4 mr-2" />
+                    Upload Minutes
             </Button>
-          </DialogTrigger>
-          <DialogContent className="sm:max-w-[500px]">
+                )}
+              </CardFooter>
+            </Card>
+          ))
+        )}
+      </div>
+
+      {/* New Meeting Dialog */}
+      <Dialog open={openNewMeetingDialog} onOpenChange={setOpenNewMeetingDialog}>
+        <DialogContent>
             <DialogHeader>
               <DialogTitle>Schedule New Meeting</DialogTitle>
               <DialogDescription>
-                Set the details for the chama meeting. All members will be notified.
+              Schedule a new meeting for your chama members.
               </DialogDescription>
             </DialogHeader>
             
-            <div className="grid gap-4 py-4">
-              <div className="grid gap-2">
-                <Label htmlFor="title">Meeting Title</Label>
-                <Input
-                  id="title"
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  placeholder="Monthly Contribution Meeting"
-                />
-              </div>
+          <Form {...meetingForm}>
+            <form onSubmit={meetingForm.handleSubmit(onNewMeetingSubmit)} className="space-y-4">
+              <FormField
+                control={meetingForm.control}
+                name="title"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Title</FormLabel>
+                    <FormControl>
+                      <Input {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
               
-              <div className="grid gap-2">
-                <Label htmlFor="description">Description (Optional)</Label>
-                <Textarea
-                  id="description"
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  placeholder="Agenda and other details..."
-                  rows={3}
-                />
-              </div>
+              <FormField
+                control={meetingForm.control}
+                name="description"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Description</FormLabel>
+                    <FormControl>
+                      <Textarea {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
               
-              <div className="grid gap-2">
-                <Label>Date</Label>
+              <div className="grid grid-cols-2 gap-4">
+                <FormField
+                  control={meetingForm.control}
+                  name="date"
+                  render={({ field }) => (
+                    <FormItem className="flex flex-col">
+                      <FormLabel>Date</FormLabel>
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <FormControl>
+                            <Button
+                              variant="outline"
+                              className={cn(
+                                "w-full pl-3 text-left font-normal",
+                                !field.value && "text-muted-foreground"
+                              )}
+                            >
+                              {field.value ? (
+                                format(field.value, "PPP")
+                              ) : (
+                                <span>Pick a date</span>
+                              )}
+                              <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
+                            </Button>
+                          </FormControl>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0" align="start">
                 <Calendar
                   mode="single"
-                  selected={selectedDate}
-                  onSelect={setSelectedDate}
-                  className="border rounded-md"
-                  disabled={(date) => date < new Date()}
+                            selected={field.value}
+                            onSelect={field.onChange}
+                            disabled={(date) =>
+                              date < new Date()
+                            }
+                            initialFocus
+                          />
+                        </PopoverContent>
+                      </Popover>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                
+                <FormField
+                  control={meetingForm.control}
+                  name="time"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Time</FormLabel>
+                      <FormControl>
+                        <Input type="time" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
                 />
               </div>
               
-              <div className="grid gap-2">
-                <Label htmlFor="time">Time</Label>
-                <Input
-                  id="time"
-                  type="time"
-                  value={time}
-                  onChange={(e) => setTime(e.target.value)}
-                />
-              </div>
+              <FormField
+                control={meetingForm.control}
+                name="location"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Location</FormLabel>
+                    <FormControl>
+                      <Input {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
               
-              <div className="grid gap-2">
-                <Label htmlFor="location">Location</Label>
-                <Input
-                  id="location"
-                  value={location}
-                  onChange={(e) => setLocation(e.target.value)}
-                  placeholder="Virtual or physical location"
-                />
-              </div>
-            </div>
+              <FormField
+                control={meetingForm.control}
+                name="agenda"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Agenda</FormLabel>
+                    <FormControl>
+                      <Textarea {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
             
             <DialogFooter>
-              <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setOpenNewMeetingDialog(false)}
+                >
                 Cancel
               </Button>
               <Button 
-                onClick={handleCreateMeeting}
-                disabled={!selectedDate || !time || !title}
-              >
+                  type="submit"
+                  disabled={createMeetingMutation.isPending}
+                >
+                  {createMeetingMutation.isPending ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Scheduling...
+                    </>
+                  ) : (
+                    <>
+                      <CalendarIcon className="mr-2 h-4 w-4" />
                 Schedule Meeting
+                    </>
+                  )}
               </Button>
             </DialogFooter>
+            </form>
+          </Form>
           </DialogContent>
         </Dialog>
-      </div>
-      
-      {isLoading ? (
-        <div className="space-y-4">
-          <Card>
-            <CardContent className="h-24 flex items-center justify-center">
-              <p>Loading meetings...</p>
-            </CardContent>
-          </Card>
-        </div>
-      ) : (
-        <div className="space-y-6">
-          {/* Upcoming meetings */}
-          <div>
-            <h3 className="text-lg font-semibold mb-4">Upcoming Meetings</h3>
-            {upcomingMeetings.length > 0 ? (
-              <div className="space-y-4">
-                {upcomingMeetings.map((meeting) => (
-                  <Card key={meeting.id}>
-                    <CardContent className="p-6">
-                      <div className="flex flex-col md:flex-row md:justify-between md:items-start gap-4">
-                        <div className="flex-1">
-                          <h4 className="text-lg font-medium">{meeting.title}</h4>
-                          <p className="text-muted-foreground text-sm mb-4">
-                            {meeting.description || "No description provided"}
-                          </p>
-                          
-                          <div className="space-y-2">
-                            <div className="flex items-center text-sm">
-                              <CalendarIcon className="h-4 w-4 mr-2 text-muted-foreground" />
-                              {format(new Date(meeting.scheduledFor), "EEEE, MMMM d, yyyy 'at' h:mm a")}
-                            </div>
-                            {meeting.location && (
-                              <div className="flex items-center text-sm">
-                                <MapPin className="h-4 w-4 mr-2 text-muted-foreground" />
-                                {meeting.location}
-                              </div>
-                            )}
-                            <div className="flex items-center text-sm">
-                              <Clock className="h-4 w-4 mr-2 text-muted-foreground" />
-                              Starts in {formatDistanceToNow(new Date(meeting.scheduledFor))}
-                            </div>
-                          </div>
-                        </div>
-                        
-                        <div className="flex flex-col gap-2 sm:flex-row md:flex-col">
-                          <Button variant="secondary">
-                            View Details
-                          </Button>
-                          <Button variant="outline">
-                            <Users className="h-4 w-4 mr-2" />
-                            RSVP
-                          </Button>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            ) : (
-              <Card>
-                <CardContent className="p-6 text-center">
-                  <p className="text-muted-foreground">No upcoming meetings scheduled</p>
-                  <Button 
-                    className="mt-4" 
-                    variant="outline" 
-                    onClick={() => setIsCreateDialogOpen(true)}
-                  >
-                    <Plus className="h-4 w-4 mr-2" />
-                    Schedule a Meeting
-                  </Button>
-                </CardContent>
-              </Card>
-            )}
-          </div>
+
+      {/* Upload Minutes Dialog */}
+      <Dialog open={openUploadMinutesDialog} onOpenChange={setOpenUploadMinutesDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Upload Meeting Minutes</DialogTitle>
+            <DialogDescription>
+              Upload the minutes and any supporting documents for the meeting.
+            </DialogDescription>
+          </DialogHeader>
           
-          {/* Past meetings */}
-          {pastMeetings.length > 0 && (
-            <div>
-              <h3 className="text-lg font-semibold mb-4">Past Meetings</h3>
-              <div className="space-y-4">
-                {pastMeetings.map((meeting) => (
-                  <Card key={meeting.id}>
-                    <CardContent className="p-6">
-                      <div className="flex flex-col md:flex-row md:justify-between md:items-start gap-4">
-                        <div className="flex-1">
-                          <h4 className="text-lg font-medium">{meeting.title}</h4>
-                          <p className="text-muted-foreground text-sm mb-4">
-                            {meeting.description || "No description provided"}
-                          </p>
-                          
-                          <div className="space-y-2">
-                            <div className="flex items-center text-sm">
-                              <CalendarIcon className="h-4 w-4 mr-2 text-muted-foreground" />
-                              {format(new Date(meeting.scheduledFor), "EEEE, MMMM d, yyyy 'at' h:mm a")}
-                            </div>
-                            {meeting.location && (
-                              <div className="flex items-center text-sm">
-                                <MapPin className="h-4 w-4 mr-2 text-muted-foreground" />
-                                {meeting.location}
-                              </div>
-                            )}
-                            <div className="flex items-center text-sm">
-                              <Clock className="h-4 w-4 mr-2 text-muted-foreground" />
-                              {formatDistanceToNow(new Date(meeting.scheduledFor))} ago
-                            </div>
-                          </div>
-                        </div>
-                        
-                        <div>
-                          <Button variant="outline">
-                            View Minutes
+          <Form {...minutesForm}>
+            <form onSubmit={minutesForm.handleSubmit(onUploadMinutesSubmit)} className="space-y-4">
+              <FormField
+                control={minutesForm.control}
+                name="content"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Minutes Content</FormLabel>
+                    <FormControl>
+                      <Textarea {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              
+              <FormField
+                control={minutesForm.control}
+                name="file"
+                render={({ field: { value, onChange, ...field } }) => (
+                  <FormItem>
+                    <FormLabel>Supporting Document (Optional)</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="file"
+                        accept=".pdf,.doc,.docx"
+                        onChange={(e) => onChange(e.target.files?.[0])}
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              
+              <DialogFooter>
+                  <Button 
+                  type="button"
+                    variant="outline" 
+                  onClick={() => setOpenUploadMinutesDialog(false)}
+                  >
+                  Cancel
+                  </Button>
+                <Button
+                  type="submit"
+                  disabled={uploadMinutesMutation.isPending}
+                >
+                  {uploadMinutesMutation.isPending ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Uploading...
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="mr-2 h-4 w-4" />
+                      Upload Minutes
+                    </>
+                  )}
                           </Button>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
+              </DialogFooter>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
     </ChamaLayout>
   );
 }

@@ -5,6 +5,7 @@ import {
   Message, ChamaRule, Notification,
   Product, InsertProduct 
 } from "@shared/schema";
+
 import { AIConversation, LearningModule } from "@/types";
 
 // Wallet API
@@ -95,14 +96,47 @@ export const getChamaMeetings = async (chamaId: number): Promise<Meeting[]> => {
   return res.json();
 };
 
-export const createMeeting = async (chamaId: number, title: string, description: string, scheduledFor: Date, location: string): Promise<Meeting> => {
-  const res = await apiRequest("POST", `/api/chamas/${chamaId}/meetings`, {
-    title,
-    description,
-    scheduledFor: scheduledFor.toISOString(),
-    location
-  });
-  return res.json();
+export const createMeeting = async (chamaId: number, meetingData: {
+  title: string;
+  description?: string;
+  scheduledFor: string;
+  location?: string;
+}): Promise<Meeting> => {
+  try {
+    const res = await fetch(`/api/chamas/${chamaId}/meetings`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      body: JSON.stringify(meetingData),
+      credentials: 'include',
+    });
+
+    if (!res.ok) {
+      const errorText = await res.text();
+      throw new Error(errorText || res.statusText);
+    }
+
+    // Check if there's any content
+    const contentLength = res.headers.get('content-length');
+    if (contentLength === '0' || !contentLength) {
+      // If no content, return a success response
+      return {
+        id: 0, // This will be updated by the server
+        chamaId,
+        ...meetingData,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      } as Meeting;
+    }
+
+    const data = await res.json();
+    return data;
+  } catch (error) {
+    console.error('Error creating meeting:', error);
+    throw error;
+  }
 };
 
 // Chama Rules API
@@ -208,4 +242,36 @@ export const getLearningModules = async (): Promise<LearningModule[]> => {
       completed: false
     }
   ];
+};
+
+// Chama Wallet API
+export const getChamaWallet = async (chamaId: number): Promise<Wallet> => {
+  const res = await apiRequest("GET", `/api/chamas/${chamaId}/wallet`);
+  return res.json();
+};
+
+export const transferToChama = async (
+  chamaId: number, 
+  amount: number, 
+  description: string
+): Promise<{ transaction: Transaction; contribution: Contribution }> => {
+  const res = await apiRequest("POST", `/api/chamas/${chamaId}/transfer`, {
+    amount: amount.toString(),
+    description,
+    type: "chama_contribution"
+  });
+  return res.json();
+};
+
+export const transferFromChama = async (
+  chamaId: number, 
+  amount: number, 
+  description: string
+): Promise<{ transaction: Transaction; contribution: Contribution }> => {
+  const res = await apiRequest("POST", `/api/chamas/${chamaId}/withdraw`, {
+    amount: amount.toString(),
+    description,
+    type: "chama_withdrawal"
+  });
+  return res.json();
 };

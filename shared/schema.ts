@@ -50,7 +50,7 @@ export const chamaMembers = pgTable("chama_members", {
   id: serial("id").primaryKey(),
   chamaId: integer("chama_id").notNull(),
   userId: integer("user_id").notNull(),
-  role: text("role").default("member").notNull(), // chairperson, treasurer, secretary, member, assistant
+  role: text("role").default("member").notNull(), // chairperson, treasurer, secretary, member, assistants
   contributionAmount: doublePrecision("contribution_amount").default(0),
   contributionFrequency: text("contribution_frequency").default("monthly"),
   rating: integer("rating").default(5),
@@ -116,6 +116,7 @@ export const messages = pgTable("messages", {
   senderId: integer("sender_id").notNull(),
   receiverId: integer("receiver_id"),
   chamaId: integer("chama_id"),
+  itemId: integer("item_id"),
   content: text("content").notNull(),
   isRead: boolean("is_read").default(false),
   sentAt: timestamp("sent_at").defaultNow().notNull(),
@@ -156,6 +157,9 @@ export const marketplaceItems = pgTable("marketplace_items", {
   currency: text("currency").default("KES").notNull(),
   imageUrl: text("image_url"),
   category: text("category"),
+  quantity: integer("quantity").default(1).notNull(),
+  condition: text("condition").default("new"),
+  location: text("location"),
   isActive: boolean("is_active").default(true),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
@@ -164,6 +168,43 @@ export const insertMarketplaceItemSchema = createInsertSchema(marketplaceItems).
   id: true,
   isActive: true,
   createdAt: true,
+});
+
+// Wishlist items
+export const wishlistItems = pgTable("wishlist_items", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull(),
+  itemId: integer("item_id").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Cart items
+export const cartItems = pgTable("cart_items", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull(),
+  itemId: integer("item_id").notNull(),
+  quantity: integer("quantity").default(1).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Orders
+export const orders = pgTable("orders", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull(),
+  totalAmount: doublePrecision("total_amount").notNull(),
+  currency: text("currency").default("KES").notNull(),
+  status: text("status").default("pending").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Order items
+export const orderItems = pgTable("order_items", {
+  id: serial("id").primaryKey(),
+  orderId: integer("order_id").notNull(),
+  itemId: integer("item_id").notNull(),
+  quantity: integer("quantity").notNull(),
+  price: doublePrecision("price").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
 // AI Assistant conversations
@@ -206,6 +247,11 @@ export type InsertLearningResource = z.infer<typeof insertLearningResourceSchema
 
 export type MarketplaceItem = typeof marketplaceItems.$inferSelect;
 export type InsertMarketplaceItem = z.infer<typeof insertMarketplaceItemSchema>;
+
+export type WishlistItem = typeof wishlistItems.$inferSelect;
+export type CartItem = typeof cartItems.$inferSelect;
+export type Order = typeof orders.$inferSelect;
+export type OrderItem = typeof orderItems.$inferSelect;
 
 export type AiConversation = typeof aiConversations.$inferSelect;
 export type InsertAiConversation = z.infer<typeof insertAiConversationSchema>;

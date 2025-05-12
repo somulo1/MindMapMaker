@@ -9,7 +9,7 @@ export function cn(...inputs: ClassValue[]) {
 /**
  * Format a currency amount with the specified currency code
  */
-export function formatCurrency(amount: number, currencyCode: string = 'USD'): string {
+export function formatCurrency(amount: number, currencyCode: string = 'Ksh'): string {
   // Format the number
   let formatted: string;
   

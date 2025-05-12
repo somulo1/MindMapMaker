@@ -116,14 +116,48 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     // Handle direct messages
     const unregisterDirectMessage = registerHandler('direct_message', (data) => {
       if (data.message) {
-        setMessages(prevMessages => [data.message, ...prevMessages]);
+        setMessages(prevMessages => {
+          // Check if we already have this message (by content and sender)
+          const existingIndex = prevMessages.findIndex(
+            msg => msg.content === data.message.content && 
+                  msg.senderId === data.message.senderId &&
+                  Math.abs(new Date(msg.sentAt).getTime() - new Date(data.message.sentAt).getTime()) < 5000
+          );
+          
+          if (existingIndex !== -1) {
+            // Update existing message with server data
+            const updatedMessages = [...prevMessages];
+            updatedMessages[existingIndex] = data.message;
+            return updatedMessages;
+          }
+          
+          // Add new message
+          return [data.message, ...prevMessages];
+        });
       }
     });
     
     // Handle chama messages
     const unregisterChamaMessage = registerHandler('chama_message', (data) => {
       if (data.message && data.message.chamaId === currentChamaId) {
-        setChamaMessages(prevMessages => [data.message, ...prevMessages]);
+        setChamaMessages(prevMessages => {
+          // Check if we already have this message (by content and sender)
+          const existingIndex = prevMessages.findIndex(
+            msg => msg.content === data.message.content && 
+                  msg.senderId === data.message.senderId &&
+                  Math.abs(new Date(msg.sentAt).getTime() - new Date(data.message.sentAt).getTime()) < 5000
+          );
+          
+          if (existingIndex !== -1) {
+            // Update existing message with server data
+            const updatedMessages = [...prevMessages];
+            updatedMessages[existingIndex] = data.message;
+            return updatedMessages;
+          }
+          
+          // Add new message
+          return [data.message, ...prevMessages];
+        });
       }
     });
     
@@ -161,6 +195,27 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   
   // Send direct message
   const sendDirectMessage = (receiverId: number, content: string) => {
+    if (!user) return false;
+
+    // Create temporary message
+    const tempMessage: Message = {
+      id: Date.now(), // Temporary ID
+      senderId: user.id,
+      receiverId,
+      content,
+      isRead: false,
+      sentAt: new Date().toISOString(),
+      sender: {
+        id: user.id,
+        username: user.username,
+        fullName: user.fullName,
+        profilePic: user.profilePic
+      }
+    };
+
+    // Add message immediately to UI
+    setMessages(prevMessages => [tempMessage, ...prevMessages]);
+
     if (isConnected && isAuthenticated) {
       // Try WebSocket first
       const success = wsSendDirectMessage(receiverId, content);
@@ -174,10 +229,29 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   
   // Send chama message
   const sendChamaMessage = (content: string) => {
-    if (!currentChamaId) {
+    if (!currentChamaId || !user) {
       setError('No chama selected');
       return false;
     }
+
+    // Create temporary message
+    const tempMessage: Message = {
+      id: Date.now(), // Temporary ID
+      senderId: user.id,
+      chamaId: currentChamaId,
+      content,
+      isRead: false,
+      sentAt: new Date().toISOString(),
+      sender: {
+        id: user.id,
+        username: user.username,
+        fullName: user.fullName,
+        profilePic: user.profilePic
+      }
+    };
+
+    // Add message immediately to UI
+    setChamaMessages(prevMessages => [tempMessage, ...prevMessages]);
     
     if (isConnected && isAuthenticated) {
       // Try WebSocket first
