@@ -1,4 +1,5 @@
 import React from 'react';
+import { Link } from 'wouter';
 import { Button } from '@/components/ui/button';
 import { formatCurrency } from '@/lib/utils';
 import Avatar from '../common/Avatar';
@@ -53,7 +54,7 @@ const MarketplaceItem: React.FC<MarketplaceItemProps> = ({ item }) => {
           className="w-full bg-neutral-100 dark:bg-neutral-700 hover:bg-neutral-200 text-sm py-1.5 rounded"
           asChild
         >
-          <a href={`/marketplace/${item.id}`}>View Details</a>
+          <Link href={`/marketplace/${item.id}`}>View Details</Link>
         </Button>
       </div>
     </div>

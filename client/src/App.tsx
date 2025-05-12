@@ -2,6 +2,7 @@ import { Switch, Route } from "wouter";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "./pages/user/not-found"; // Correct path;
+import NotificationPanel from "./pages/user/NotificationPanel";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { WalletProvider } from "./context/WalletContext";
 import { ChatProvider } from "./context/ChatContext";
@@ -14,8 +15,10 @@ import ChamaDetailPage from "./pages/user/ChamaDetailPage";
 import MessagesPage from "./pages/user/MessagesPage";
 import WalletPage from "./pages/user/WalletPage";
 import MarketplacePage from "./pages/user/MarketplacePage";
+import ProductDetailPage from "./pages/user/ProductDetailPage";
 import LearningHubPage from "./pages/user/LearningHubPage";
 import SettingsPage from "./pages/user/SettingsPage";
+import MindMapPage from "./pages/MindMapPage";
 // Chama Dashboard Pages
 import ChamaDashboard from "@/pages/chama/Dashboard";
 import ChamaMembers from "@/pages/chama/Members";
@@ -40,11 +43,30 @@ import ApiSettings from "@/pages/admin/ApiSettings";
 function AuthenticatedRoutes() {
   return (
     <Switch>
-      <Route path="/chamas/:id">
-        {(params) => <ChamaDetailPage id={params.id} />}
+      <Route path="/mindmap">
+        <MindMapPage />
       </Route>
       <Route path="/chamas">
         <ChamasDashboardPage />
+      </Route>
+      {/* Chama Routes */}
+      <Route path="/chamas/:id">
+        {(params) => <ChamaDashboard id={params.id} />}
+      </Route>
+      <Route path="/chamas/:id/members">
+        {(params) => <ChamaMembers id={params.id} />}
+      </Route>
+      <Route path="/chamas/:id/contributions">
+        {(params) => <ChamaContributions id={params.id} />}
+      </Route>
+      <Route path="/chamas/:id/meetings">
+        {(params) => <ChamaMeetings id={params.id} />}
+      </Route>
+      <Route path="/chamas/:id/documents">
+        {(params) => <ChamaDocuments id={params.id} />}
+      </Route>
+      <Route path="/chamas/:id/settings">
+        {(params) => <ChamaSettings id={params.id} />}
       </Route>
       <Route path="/messages">
         <MessagesPage />
@@ -55,24 +77,23 @@ function AuthenticatedRoutes() {
       <Route path="/marketplace">
         <MarketplacePage />
       </Route>
+      <Route path="/marketplace/:id">
+        {(params) => <ProductDetailPage id={params.id} />}
+      </Route>
       <Route path="/learning">
         <LearningHubPage />
       </Route>
       <Route path="/settings">
         <SettingsPage />
       </Route>
+      <Route path="/NotificationPanel">
+        <NotificationPanel />
+      </Route>
       <Route path="/">
         <PersonalDashboardPage />
       </Route>
-      {/* Chama Routes */}
-      <Route path="/chama/:id" component={ChamaDashboard} />
-        <Route path="/chama/:id/members" component={ChamaMembers} />
-        <Route path="/chama/:id/contributions" component={ChamaContributions} />
-        <Route path="/chama/:id/meetings" component={ChamaMeetings} />
-        <Route path="/chama/:id/documents" component={ChamaDocuments} />
-        <Route path="/chama/:id/settings" component={ChamaSettings} />
-        
         {/* Admin Routes */}
+        
         <Route path="/admin" component={AdminDashboard} />
         <Route path="/admin/users" component={AdminUsers} />
         <Route path="/admin/chamas" component={AdminChamas} />
