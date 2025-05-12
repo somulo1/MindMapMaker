@@ -184,7 +184,7 @@ const WalletPage: React.FC = () => {
                             <TransactionHistoryList
                                 transactions={transactions.filter(t =>
                                     t.type === 'withdrawal' || t.type === 'contribution' ||
-                                    (t.type === 'transfer' && t.amount < 0)
+                                    (t.type === 'transfer' && t.amount > 0)
                                 )}
                             />
                         </TabsContent>
