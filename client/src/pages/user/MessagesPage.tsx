@@ -6,46 +6,58 @@ import { Card } from '@/components/ui/card';
 import ConversationList from '@/components/messages/ConversationList';
 import ChatInterface from '@/components/messages/ChatInterface';
 import { useChat } from '@/context/ChatContext';
+import { useAuth } from '@/context/AuthContext';
 
 const MessagesPage: React.FC = () => {
   const isMobile = useMediaQuery('(max-width: 768px)');
   const { messages } = useChat();
+  const { user } = useAuth();
   const [selectedReceiverId, setSelectedReceiverId] = useState<number | null>(null);
   const [selectedChamaId, setSelectedChamaId] = useState<number | null>(null);
   const [selectedName, setSelectedName] = useState<string | null>(null);
   
-  // Group messages by sender/receiver for conversation list
+  // Group messages by conversation
   const conversations = React.useMemo(() => {
     const convoMap = new Map();
     
     messages.forEach(msg => {
       if (msg.receiverId && !msg.chamaId) {
         // Direct message
-        const otherId = msg.senderId === (msg.sender?.id || 0) 
-          ? msg.receiverId 
-          : msg.senderId;
-          
-        const otherName = msg.senderId === (msg.sender?.id || 0)
-          ? msg.receiver?.name || `User ${otherId}`
-          : msg.sender?.fullName || `User ${otherId}`;
+        // Determine the other participant in the conversation
+        const otherId = msg.senderId === user?.id ? msg.receiverId : msg.senderId;
+        const otherUser = msg.senderId === user?.id ? msg.receiver : msg.sender;
+        const otherName = otherUser ? (
+          'username' in otherUser ? otherUser.username : 
+          'fullName' in otherUser ? otherUser.fullName : 
+          'name' in otherUser ? otherUser.name : 
+          `User ${otherId}`
+        ) : `User ${otherId}`;
           
         const key = `user-${otherId}`;
         
         if (!convoMap.has(key)) {
+          // Create new conversation
           convoMap.set(key, {
             id: otherId,
             name: otherName,
             type: 'user',
             lastMessage: msg,
-            unreadCount: msg.isRead ? 0 : 1
+            unreadCount: msg.isRead ? 0 : 1,
+            messages: [msg]
           });
         } else {
+          // Update existing conversation
           const convo = convoMap.get(key);
+          convo.messages.push(msg);
+          
+          // Update last message if this one is newer
           if (new Date(msg.sentAt) > new Date(convo.lastMessage.sentAt)) {
             convo.lastMessage = msg;
-            if (!msg.isRead) {
+          }
+          
+          // Update unread count
+          if (!msg.isRead && msg.senderId !== user?.id) {
               convo.unreadCount += 1;
-            }
           }
         }
       } else if (msg.chamaId) {
@@ -58,23 +70,28 @@ const MessagesPage: React.FC = () => {
             name: msg.receiver?.name || `Chama ${msg.chamaId}`,
             type: 'chama',
             lastMessage: msg,
-            unreadCount: msg.isRead ? 0 : 1
+            unreadCount: msg.isRead ? 0 : 1,
+            messages: [msg]
           });
         } else {
           const convo = convoMap.get(key);
+          convo.messages.push(msg);
+          
           if (new Date(msg.sentAt) > new Date(convo.lastMessage.sentAt)) {
             convo.lastMessage = msg;
-            if (!msg.isRead) {
+          }
+          
+          if (!msg.isRead && msg.senderId !== user?.id) {
               convo.unreadCount += 1;
-            }
           }
         }
       }
     });
     
+    // Sort conversations by last message time
     return Array.from(convoMap.values())
       .sort((a, b) => new Date(b.lastMessage.sentAt).getTime() - new Date(a.lastMessage.sentAt).getTime());
-  }, [messages]);
+  }, [messages, user?.id]);
   
   const handleSelectConversation = (id: number, type: 'user' | 'chama', name: string) => {
     if (type === 'user') {

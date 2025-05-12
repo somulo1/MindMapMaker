@@ -60,9 +60,11 @@ const MobileLayout: React.FC<MobileLayoutProps> = ({
           </div>
 
           <div className="flex items-center space-x-4">
+            <Link href="/NotificationPanel">
             <button className="p-2 rounded-full hover:bg-neutral-100 dark:hover:bg-neutral-700 transition-colors">
               <MdNotifications className="text-xl text-neutral-700 dark:text-neutral-200" />
             </button>
+            </Link>
             <Link href="/settings">
               <a className="relative">
                 <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-white font-semibold">JD</div>
