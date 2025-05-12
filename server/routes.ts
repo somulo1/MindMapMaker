@@ -148,6 +148,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/auth/login", passport.authenticate("local"), handleErrors(authController.login));
   app.get("/api/auth/me", isAuthenticated, handleErrors(authController.getCurrentUser));
   app.post("/api/auth/logout", handleErrors(authController.logout));
+  app.post("/api/users/search", handleErrors(authController.getUserByEmailOrUsername));
 
   // Chama routes
   app.get("/api/chamas", isAuthenticated, handleErrors(chamaController.getUserChamas));
