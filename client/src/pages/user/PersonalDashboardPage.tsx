@@ -21,20 +21,22 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { useWallet } from '@/hooks/useWallet';
 import { useChama } from '@/hooks/useChama';
 import { useToast } from '@/hooks/use-toast';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import * as z from 'zod';
-import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
-
-// Transaction Dialog Schema
-const transactionSchema = z.object({
-  amount: z.coerce.number().positive({ message: "Amount must be greater than 0" }),
-  description: z.string().optional(),
-});
+import {
+    Form,
+    FormControl,
+    FormDescription,
+    FormField,
+    FormItem,
+    FormLabel,
+    FormMessage
+} from '@/components/ui/form';
+import {useLocation} from "wouter";
 
 // Create Chama Schema
 const createChamaSchema = z.object({
@@ -50,28 +52,12 @@ const PersonalDashboardPage: React.FC = () => {
   const { toast } = useToast();
   const { deposit, withdraw } = useWallet();
   const { createChama } = useChama();
-  
-  // Dialog states
-  const [isDepositOpen, setIsDepositOpen] = useState(false);
-  const [isWithdrawOpen, setIsWithdrawOpen] = useState(false);
-  const [isTransferOpen, setIsTransferOpen] = useState(false);
+
+    /// Routing with wouter
+    const [_, navigate] = useLocation();
+
+    /// Dialog states
   const [isChamaOpen, setIsChamaOpen] = useState(false);
-  
-  // Forms
-  const depositForm = useForm<z.infer<typeof transactionSchema>>({
-    resolver: zodResolver(transactionSchema),
-    defaultValues: { amount: 0, description: "" },
-  });
-  
-  const withdrawForm = useForm<z.infer<typeof transactionSchema>>({
-    resolver: zodResolver(transactionSchema),
-    defaultValues: { amount: 0, description: "" },
-  });
-  
-  const transferForm = useForm<z.infer<typeof transactionSchema>>({
-    resolver: zodResolver(transactionSchema),
-    defaultValues: { amount: 0, description: "" },
-  });
   
   const chamaForm = useForm<z.infer<typeof createChamaSchema>>({
     resolver: zodResolver(createChamaSchema),
@@ -83,55 +69,6 @@ const PersonalDashboardPage: React.FC = () => {
     },
   });
   
-  // Handle deposit submit
-  const onDepositSubmit = async (values: z.infer<typeof transactionSchema>) => {
-    try {
-      await deposit(values.amount, values.description);
-      toast({
-        title: "Deposit successful",
-        description: `KES ${values.amount} has been added to your wallet.`,
-      });
-      setIsDepositOpen(false);
-      depositForm.reset();
-    } catch (error) {
-      toast({
-        variant: "destructive",
-        title: "Deposit failed",
-        description: error.message || "An error occurred during the deposit.",
-      });
-    }
-  };
-  
-  // Handle withdraw submit
-  const onWithdrawSubmit = async (values: z.infer<typeof transactionSchema>) => {
-    try {
-      await withdraw(values.amount, values.description);
-      toast({
-        title: "Withdrawal successful",
-        description: `KES ${values.amount} has been withdrawn from your wallet.`,
-      });
-      setIsWithdrawOpen(false);
-      withdrawForm.reset();
-    } catch (error) {
-      toast({
-        variant: "destructive",
-        title: "Withdrawal failed",
-        description: error.message || "An error occurred during the withdrawal.",
-      });
-    }
-  };
-  
-  // Handle transfer submit
-  const onTransferSubmit = async (values: z.infer<typeof transactionSchema>) => {
-    // In a real implementation, this would handle transfers to other users
-    toast({
-      title: "Transfer initiated",
-      description: "This feature is coming soon.",
-    });
-    setIsTransferOpen(false);
-    transferForm.reset();
-  };
-  
   // Handle create chama submit
   const onCreateChamaSubmit = async (values: z.infer<typeof createChamaSchema>) => {
     try {
@@ -142,11 +79,11 @@ const PersonalDashboardPage: React.FC = () => {
       });
       setIsChamaOpen(false);
       chamaForm.reset();
-    } catch (error) {
+    } catch (error: any) {
       toast({
         variant: "destructive",
         title: "Failed to create chama",
-        description: error.message || "An error occurred while creating the chama.",
+          description: error?.message || "An error occurred while creating the chama.",
       });
     }
   };
@@ -162,9 +99,9 @@ const PersonalDashboardPage: React.FC = () => {
       </section>
       
       {/* Wallet Card */}
-      <WalletCard 
-        onDeposit={() => setIsDepositOpen(true)}
-        onTransfer={() => setIsTransferOpen(true)}
+      <WalletCard
+          onDeposit={() => navigate("/wallet/#deposit")}
+          onTransfer={() => navigate("/wallet/#transfer")}
       />
       
       {/* Quick Actions */}
@@ -239,19 +176,19 @@ const PersonalDashboardPage: React.FC = () => {
   
   const desktopContent = (
     <>
-      <QuickActions 
-        onTransfer={() => setIsTransferOpen(true)}
-        onDeposit={() => setIsDepositOpen(true)}
-        onWithdraw={() => setIsWithdrawOpen(true)}
+      <QuickActions
+          onTransfer={() => navigate("/wallet/#transfer")}
+          onDeposit={() => navigate("/wallet/#deposit")}
+          onWithdraw={() => navigate("/wallet/#withdraw")}
         onCreateChama={() => setIsChamaOpen(true)}
       />
       
       <div className="flex flex-col md:flex-row gap-4 mb-6">
         {/* Wallet Card */}
         <div className="flex-1">
-          <WalletCard 
-            onDeposit={() => setIsDepositOpen(true)}
-            onTransfer={() => setIsTransferOpen(true)}
+          <WalletCard
+              onDeposit={() => navigate("/wallet/#deposit")}
+              onTransfer={() => navigate("/wallet/#transfer")}
           />
         </div>
         
@@ -289,166 +226,6 @@ const PersonalDashboardPage: React.FC = () => {
           {desktopContent}
         </DesktopLayout>
       )}
-      
-      {/* Deposit Dialog */}
-      <Dialog open={isDepositOpen} onOpenChange={setIsDepositOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Deposit Funds</DialogTitle>
-            <DialogDescription>
-              Add funds to your wallet. This simulates an M-Pesa deposit.
-            </DialogDescription>
-          </DialogHeader>
-          
-          <Form {...depositForm}>
-            <form onSubmit={depositForm.handleSubmit(onDepositSubmit)} className="space-y-4">
-              <FormField
-                control={depositForm.control}
-                name="amount"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Amount (KES)</FormLabel>
-                    <FormControl>
-                      <Input type="number" min="1" step="any" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              
-              <FormField
-                control={depositForm.control}
-                name="description"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Description (Optional)</FormLabel>
-                    <FormControl>
-                      <Input placeholder="e.g., Savings deposit" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              
-              <DialogFooter>
-                <Button type="submit" disabled={depositForm.formState.isSubmitting}>
-                  {depositForm.formState.isSubmitting ? "Processing..." : "Deposit"}
-                </Button>
-              </DialogFooter>
-            </form>
-          </Form>
-        </DialogContent>
-      </Dialog>
-      
-      {/* Withdraw Dialog */}
-      <Dialog open={isWithdrawOpen} onOpenChange={setIsWithdrawOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Withdraw Funds</DialogTitle>
-            <DialogDescription>
-              Withdraw funds from your wallet. This simulates an M-Pesa withdrawal.
-            </DialogDescription>
-          </DialogHeader>
-          
-          <Form {...withdrawForm}>
-            <form onSubmit={withdrawForm.handleSubmit(onWithdrawSubmit)} className="space-y-4">
-              <FormField
-                control={withdrawForm.control}
-                name="amount"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Amount (KES)</FormLabel>
-                    <FormControl>
-                      <Input type="number" min="1" step="any" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              
-              <FormField
-                control={withdrawForm.control}
-                name="description"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Description (Optional)</FormLabel>
-                    <FormControl>
-                      <Input placeholder="e.g., Personal expenses" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              
-              <DialogFooter>
-                <Button type="submit" disabled={withdrawForm.formState.isSubmitting}>
-                  {withdrawForm.formState.isSubmitting ? "Processing..." : "Withdraw"}
-                </Button>
-              </DialogFooter>
-            </form>
-          </Form>
-        </DialogContent>
-      </Dialog>
-      
-      {/* Transfer Dialog */}
-      <Dialog open={isTransferOpen} onOpenChange={setIsTransferOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Transfer Funds</DialogTitle>
-            <DialogDescription>
-              Send money to another user or chama.
-            </DialogDescription>
-          </DialogHeader>
-          
-          <Form {...transferForm}>
-            <form onSubmit={transferForm.handleSubmit(onTransferSubmit)} className="space-y-4">
-              <FormField
-                control={transferForm.control}
-                name="amount"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Amount (KES)</FormLabel>
-                    <FormControl>
-                      <Input type="number" min="1" step="any" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              
-              <FormItem>
-                <FormLabel>Recipient</FormLabel>
-                <FormControl>
-                  <Input placeholder="Search for user or chama" disabled />
-                </FormControl>
-                <FormDescription>
-                  This feature is coming soon.
-                </FormDescription>
-              </FormItem>
-              
-              <FormField
-                control={transferForm.control}
-                name="description"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Description (Optional)</FormLabel>
-                    <FormControl>
-                      <Input placeholder="e.g., Payment for services" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              
-              <DialogFooter>
-                <Button type="submit" disabled={transferForm.formState.isSubmitting}>
-                  {transferForm.formState.isSubmitting ? "Processing..." : "Transfer"}
-                </Button>
-              </DialogFooter>
-            </form>
-          </Form>
-        </DialogContent>
-      </Dialog>
       
       {/* Create Chama Dialog */}
       <Dialog open={isChamaOpen} onOpenChange={setIsChamaOpen}>
