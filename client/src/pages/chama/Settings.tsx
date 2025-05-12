@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useParams } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -113,14 +113,17 @@ export default function ChamaSettings() {
   });
 
   // Update forms when data is loaded
-  if (chama && chamaForm.getValues().name !== chama.name) {
+  useEffect(() => {
+    if (chama) {
     chamaForm.reset({
       name: chama.name,
       description: chama.description || "",
     });
   }
+  }, [chama, chamaForm]);
   
-  if (chamaRules && rulesForm.getValues().contributionAmount !== chamaRules.contributionAmount) {
+  useEffect(() => {
+    if (chamaRules) {
     rulesForm.reset({
       contributionAmount: chamaRules.contributionAmount,
       contributionFrequency: chamaRules.contributionFrequency,
@@ -128,6 +131,7 @@ export default function ChamaSettings() {
       interestRate: chamaRules.interestRate || "",
     });
   }
+  }, [chamaRules, rulesForm]);
 
   // Mutations
   const updateChamaMutation = useMutation({
@@ -371,14 +375,18 @@ export default function ChamaSettings() {
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                {members.map((member: any) => (
+                {members.map((member: any) => {
+                  // Skip rendering if user data is missing
+                  if (!member?.user) return null;
+                  
+                  return (
                   <div 
                     key={member.id} 
                     className="flex items-center justify-between border-b pb-4 last:border-0 last:pb-0"
                   >
                     <div className="flex items-center gap-3">
                       <Avatar>
-                        <AvatarImage src="" alt={member.user.fullName} />
+                          <AvatarImage src={member.user.profilePic || ""} alt={member.user.fullName} />
                         <AvatarFallback>{getInitials(member.user.fullName)}</AvatarFallback>
                       </Avatar>
                       <div>
@@ -405,7 +413,8 @@ export default function ChamaSettings() {
                       </Button>
                     </div>
                   </div>
-                ))}
+                  );
+                })}
                 
                 {/* If no members or loading */}
                 {(members.length === 0 || isMembersLoading) && (
