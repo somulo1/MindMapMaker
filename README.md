@@ -154,17 +154,23 @@ Realtime Activity	Kafka (optional for queuing contributions, logs)
     Twilio or Agora for Calls/Meetings
 
 ## ⚙️ Build Instructions
+ this progrma runs on node version 18. for other versions you'll have to edit vite.config.ts for compertibility
+  ### You can run the program by doing the following
 
-    Set up monorepo with Turborepo or Nx
+```bash
+cone the project git clone https://github.com/somulo1/MindMapMaker.git
+cd your-repo-name
+````
+```bash 
+cd MindMapMaker
+```
 
-    Scaffold frontend in apps/frontend using Ionic React
+``` bash
+npm install
+```
 
-    Scaffold backend in apps/backend using FastAPI
+``` bash
+npm run dev
+```
 
-    Create shared folder packages/common for types, validators, utils
-
-    Integrate SQLite locally for offline support, PostgreSQL remotely
-
-    Setup CI/CD (GitHub Actions)
-
-    Enable Capacitor builds for mobile (Android/iOS)
+access your local host server at ``` bash http://localhost:3000 ```
