@@ -156,9 +156,10 @@ Realtime Activity	Kafka (optional for queuing contributions, logs)
 ## ⚙️ Build Instructions
  this progrma runs on node version 18. for other versions you'll have to edit vite.config.ts for compertibility
   ### You can run the program by doing the following
+ First, clone this repository into your machine
 
 ```bash
-cone the project git clone https://github.com/somulo1/MindMapMaker.git
+clone https://github.com/somulo1/MindMapMaker.git
 cd your-repo-name
 ````
 ```bash 
