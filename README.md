@@ -1,4 +1,4 @@
-Complete, modern, cross-platform group finance and community collaboration app called "Tujifund" using Ionic React for frontend (supporting Web, iOS, Android), JavaScript for frontend logic, SQLite for local offline storage, and a strong monorepo structure integrating backend, mobile, web, payments, and notification logic.
+Complete, modern, cross-platform group finance and community collaboration app called "Tujifund" using Ionic React for frontend (supporting Web, iOS, Android), JavaScript and React  for frontend logic, SQLite for local offline storage, and a strong monorepo structure integrating backend, mobile, web, payments, and notification logic.
 🧩 Functional Overview:
 
 Core Purpose: Enable geographically distant users to:
@@ -113,20 +113,35 @@ Core Purpose: Enable geographically distant users to:
 
 ## 💻 Technology Stack
 Function	Stack
+
 Frontend	Ionic React + Capacitor (JS)
+
 Local Storage	SQLite via Ionic Storage
+
 Backend API	Python FastAPI (scalable, async), PostgreSQL
+
 Chat & Calls	WebSockets + Agora or Twilio
+
 Mobile Payments	M-Pesa Daraja, Flutterwave, Africa’s Talking
+
 USSD Payments	Africa’s Talking
+
 Bank Integration	Redirect to Kenyan banks with secure OAuth
+
 Notifications	Firebase Cloud Messaging, Twilio
+
 File & Data Backup	Google Drive (OAuth-linked to each user)
+
 AI Modules	OpenAI GPT (local+cloud fallback), Langchain for logic
+
 Rating & Reviews	Custom logic stored in DB, avg rating in user schema
+
 Security	JWT Auth, end-to-end encryption, OTP login, role policies
+
 Monorepo Tools	Turborepo / Nx (frontend + backend in one workspace)
+
 Realtime Activity	Kafka (optional for queuing contributions, logs)
+
 🔐 Security, Privacy, and Transparency
 
     Each user owns their data; Google Drive backups per user
@@ -159,19 +174,20 @@ Realtime Activity	Kafka (optional for queuing contributions, logs)
  First, clone this repository into your machine
 
 ```bash
-clone https://github.com/somulo1/MindMapMaker.git
-cd your-repo-name
+git clone https://github.com/somulo1/MindMapMaker.git
+
 ````
+Access the repo 
 ```bash 
 cd MindMapMaker
 ```
-
+Install npm
 ``` bash
 npm install
 ```
-
+Run the app
 ``` bash
 npm run dev
 ```
 
-access your local host server at ``` bash http://localhost:3000 ```
+access your local host server at ```  http://localhost:3000 ```
