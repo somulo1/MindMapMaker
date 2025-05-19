@@ -1,0 +1,10 @@
+CREATE TABLE IF NOT EXISTS mind_maps (
+  id SERIAL PRIMARY KEY,
+  title TEXT NOT NULL,
+  description TEXT,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  nodes JSONB NOT NULL DEFAULT '[]',
+  edges JSONB NOT NULL DEFAULT '[]',
+  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);

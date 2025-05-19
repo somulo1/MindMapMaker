@@ -60,11 +60,32 @@ app.use((req, res, next) => {
   // this serves both the API and the client.
   // It is the only port that is not firewalled.
   const port = 5000;
-  server.listen({
-    port,
-    host: "0.0.0.0",
-    reusePort: true,
-  }, () => {
-    log(`serving on port ${port}`);
-  });
+  const hosts = ["localhost", "127.0.0.1"];
+  let serverStarted = false;
+
+  for (const host of hosts) {
+    try {
+      await new Promise<void>((resolve, reject) => {
+        server.listen({
+          port,
+          host,
+        }, () => {
+          serverStarted = true;
+          log(`Server started successfully on ${host}:${port}`);
+          resolve();
+        }).on('error', (err) => {
+          log(`Failed to start server on ${host}:${port} - ${err.message}`);
+          reject(err);
+        });
+      });
+      break; // If successful, exit the loop
+    } catch (err) {
+      if (hosts.indexOf(host) === hosts.length - 1 && !serverStarted) {
+        log('Failed to start server on all available hosts');
+        process.exit(1);
+      }
+      // Continue to next host if current fails
+      continue;
+    }
+  }
 })();

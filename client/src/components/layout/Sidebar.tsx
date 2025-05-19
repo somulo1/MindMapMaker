@@ -91,8 +91,8 @@ export default function Sidebar({ isOpen, closeSidebar }: SidebarProps) {
   };
 
   const sidebarClasses = `
-    bg-white w-64 flex-shrink-0 shadow-md md:h-full h-full fixed md:relative 
-    md:translate-x-0 transition-transform duration-300 ease-in-out z-20
+    bg-white w-64 flex-shrink-0 shadow-md h-screen fixed top-0 left-0
+    md:sticky md:top-0 transition-transform duration-300 ease-in-out z-20
     ${isOpen ? 'translate-x-0' : '-translate-x-full'}
   `;
 
