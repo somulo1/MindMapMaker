@@ -142,7 +142,7 @@ Monorepo Tools	Turborepo / Nx (frontend + backend in one workspace)
 
 Realtime Activity	Kafka (optional for queuing contributions, logs)
 
-🔐 Security, Privacy, and Transparency
+#### 🔐 Security, Privacy, and Transparency
 
     Each user owns their data; Google Drive backups per user
 
