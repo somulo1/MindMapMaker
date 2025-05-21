@@ -8,6 +8,41 @@ import {
 
 import { AIConversation, LearningModule } from "@/types";
 
+// Extended types for API responses
+type ChamaMemberWithUser = ChamaMember & {
+  user: Pick<User, "id" | "username" | "fullName" | "email" | "profilePic" | "location" | "phoneNumber">;
+};
+
+type ChamaInvitationWithUser = {
+  id: number;
+  chamaId: number;
+  role: string;
+  invitedUserId: number;
+  invitedByUserId: number;
+  status: string;
+  invitedAt: Date;
+  respondedAt: Date | null;
+  invitedUser: Pick<User, "id" | "username" | "fullName" | "email" | "profilePic">;
+  invitedByUser: Pick<User, "id" | "username" | "fullName">;
+};
+
+type ChamaMembersResponse = {
+  members: ChamaMemberWithUser[];
+};
+
+type ChamaInvitationsResponse = {
+  invitations: ChamaInvitationWithUser[];
+};
+
+type ContributionsResponse = {
+  contributions: Contribution[];
+};
+
+type ContributionResponse = {
+  contribution: Contribution;
+  transaction?: Transaction;
+};
+
 // Wallet API
 export const getWallet = async (): Promise<Wallet> => {
   const res = await apiRequest("GET", "/api/wallet");
@@ -51,9 +86,18 @@ export const createChama = async (name: string, description: string): Promise<Ch
 };
 
 // Chama Members API
-export const getChamaMembers = async (chamaId: number): Promise<ChamaMember[]> => {
-  const res = await apiRequest("GET", `/api/chamas/${chamaId}/members`);
-  return res.json();
+export const getChamaMembers = async (chamaId: number): Promise<ChamaMemberWithUser[]> => {
+  try {
+    const res = await apiRequest("GET", `/api/chamas/${chamaId}/members`);
+    if (!res.ok) {
+      throw new Error(`Failed to fetch members: ${res.statusText}`);
+    }
+    const data = await res.json();
+    return Array.isArray(data) ? data : data.members || [];
+  } catch (error) {
+    console.error('Error in getChamaMembers:', error);
+    throw error;
+  }
 };
 
 export const addChamaMember = async (chamaId: number, userId: number, role: string): Promise<ChamaMember> => {
@@ -72,20 +116,20 @@ export const getContributions = async (): Promise<Contribution[]> => {
 
 export const getChamaContributions = async (chamaId: number): Promise<Contribution[]> => {
   const res = await apiRequest("GET", `/api/chamas/${chamaId}/contributions`);
-  return res.json();
+  const data = await res.json();
+  return data.contributions;
 };
 
-export const createContribution = async (chamaId: number, userId: number, amount: number, dueDate: Date): Promise<Contribution> => {
+export const createContribution = async (chamaId: number, amount: number): Promise<Contribution> => {
   const res = await apiRequest("POST", `/api/chamas/${chamaId}/contributions`, {
-    userId,
     amount: amount.toString(),
-    dueDate: dueDate.toISOString(),
-    status: "pending"
+    dueDate: new Date().toISOString()
   });
-  return res.json();
+  const data = await res.json();
+  return data.contribution;
 };
 
-export const payContribution = async (contributionId: number): Promise<Contribution> => {
+export const payContribution = async (contributionId: number): Promise<{ contribution: Contribution; transaction: Transaction }> => {
   const res = await apiRequest("POST", `/api/contributions/${contributionId}/pay`);
   return res.json();
 };
@@ -96,47 +140,23 @@ export const getChamaMeetings = async (chamaId: number): Promise<Meeting[]> => {
   return res.json();
 };
 
-export const createMeeting = async (chamaId: number, meetingData: {
+export const createMeeting = async (chamaId: number, data: {
   title: string;
   description?: string;
   scheduledFor: string;
   location?: string;
+  agenda?: string;
 }): Promise<Meeting> => {
-  try {
-    const res = await fetch(`/api/chamas/${chamaId}/meetings`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-      },
-      body: JSON.stringify(meetingData),
-      credentials: 'include',
-    });
+  const res = await apiRequest("POST", `/api/chamas/${chamaId}/meetings`, data);
+  return res.json();
+};
 
-    if (!res.ok) {
-      const errorText = await res.text();
-      throw new Error(errorText || res.statusText);
-    }
-
-    // Check if there's any content
-    const contentLength = res.headers.get('content-length');
-    if (contentLength === '0' || !contentLength) {
-      // If no content, return a success response
-      return {
-        id: 0, // This will be updated by the server
-        chamaId,
-        ...meetingData,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      } as Meeting;
-    }
-
-    const data = await res.json();
-    return data;
-  } catch (error) {
-    console.error('Error creating meeting:', error);
-    throw error;
-  }
+export const uploadMeetingMinutes = async (chamaId: number, meetingId: number, data: {
+  content: string;
+  fileUrl?: string;
+}): Promise<Meeting> => {
+  const res = await apiRequest("POST", `/api/chamas/${chamaId}/meetings/${meetingId}/minutes`, data);
+  return res.json();
 };
 
 // Chama Rules API
@@ -274,4 +294,91 @@ export const transferFromChama = async (
     type: "chama_withdrawal"
   });
   return res.json();
+};
+
+// Document types
+export interface ChamaDocument {
+  id: number;
+  chamaId: number;
+  name: string;
+  description?: string;
+  category: string;
+  fileUrl: string;
+  fileType: string;
+  fileSize: number;
+  uploadedBy: number;
+  uploadedAt: string;
+  updatedAt: string;
+}
+
+// Document API functions
+export const uploadChamaDocument = async (
+  chamaId: number,
+  file: File,
+  data: {
+    category: string;
+    description?: string;
+  }
+): Promise<ChamaDocument> => {
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('category', data.category);
+  if (data.description) {
+    formData.append('description', data.description);
+  }
+
+  const res = await fetch(`/api/chamas/${chamaId}/documents`, {
+    method: 'POST',
+    body: formData,
+    credentials: 'include'
+  });
+
+  if (!res.ok) {
+    throw new Error(`Failed to upload document: ${res.statusText}`);
+  }
+
+  return res.json();
+};
+
+export const getChamaDocuments = async (chamaId: number): Promise<ChamaDocument[]> => {
+  try {
+    const res = await apiRequest("GET", `/api/chamas/${chamaId}/documents`);
+    
+    // Check if we got a valid response
+    if (!res.ok) {
+      throw new Error(`Failed to fetch documents: ${res.statusText}`);
+    }
+
+    // Check the content type
+    const contentType = res.headers.get("content-type");
+    if (!contentType || !contentType.includes("application/json")) {
+      console.error("Invalid content type:", contentType);
+      throw new Error("Invalid response format from server");
+    }
+
+    const text = await res.text(); // Get the raw text first
+    if (!text) {
+      return []; // Return empty array if no content
+    }
+
+    try {
+      const data = JSON.parse(text);
+      return Array.isArray(data) ? data : data.documents || [];
+    } catch (parseError) {
+      console.error("JSON Parse Error:", { text, error: parseError });
+      throw new Error("Failed to parse server response");
+    }
+  } catch (error) {
+    console.error("Error in getChamaDocuments:", error);
+    throw error;
+  }
+};
+
+export const downloadChamaDocument = async (chamaId: number, documentId: number): Promise<Blob> => {
+  const res = await apiRequest("GET", `/api/chamas/${chamaId}/documents/${documentId}/download`);
+  return res.blob();
+};
+
+export const deleteChamaDocument = async (chamaId: number, documentId: number): Promise<void> => {
+  await apiRequest("DELETE", `/api/chamas/${chamaId}/documents/${documentId}`);
 };

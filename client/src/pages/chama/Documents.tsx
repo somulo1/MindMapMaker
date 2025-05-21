@@ -1,114 +1,253 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useParams } from "wouter";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import ChamaLayout from "@/components/layout/ChamaLayout";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { 
-  Table, 
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow
-} from "@/components/ui/table";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { FileText, FileArchive, Plus, MoreVertical, Download, Trash2, Edit, File, FileCog, PlusCircle } from "lucide-react";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { FileText, Plus, MoreVertical, Download, Trash2, File, Loader2 } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import { uploadChamaDocument, getChamaDocuments, downloadChamaDocument, deleteChamaDocument, ChamaDocument } from "@/services/api";
 
-// Mock types - replace with actual schema types later
-interface Document {
-  id: number;
-  name: string;
-  type: string;
-  uploadedBy: string;
-  uploadedAt: string;
-  size: string;
+interface UploadFormData {
+  file: File | null;
+  category: string;
+  description?: string;
 }
+
+// Predefined document categories
+const DOCUMENT_CATEGORIES = {
+  legal: "Legal Documents",
+  financial: "Financial Reports",
+  minutes: "Meeting Minutes",
+  constitution: "Constitution",
+  policies: "Policies & Guidelines",
+  contracts: "Contracts & Agreements",
+  other: "Other Documents"
+} as const;
+
+type DocumentCategory = keyof typeof DOCUMENT_CATEGORIES;
 
 export default function ChamaDocuments() {
   const { id } = useParams<{ id: string }>();
-  const chamaId = parseInt(id);
+  const chamaId = parseInt(id || '');
+  const isValidChamaId = !isNaN(chamaId) && chamaId > 0;
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  
   const [isUploadDialogOpen, setIsUploadDialogOpen] = useState(false);
-  
-  // Mock data for documents
-  const documents: Document[] = [
-    {
-      id: 1,
-      name: "Constitution.pdf",
-      type: "PDF",
-      uploadedBy: "John Doe",
-      uploadedAt: "2023-06-15",
-      size: "1.2 MB"
+  const [searchQuery, setSearchQuery] = useState("");
+  const [uploadData, setUploadData] = useState<UploadFormData>({
+    file: null,
+    category: "",
+    description: ""
+  });
+
+  // Fetch documents
+  const { data: documents = [], isLoading, error } = useQuery<ChamaDocument[]>({
+    queryKey: ["chamaDocuments", chamaId],
+    queryFn: async () => {
+      if (!isValidChamaId) {
+        throw new Error("Invalid Chama ID");
+      }
+      try {
+        const response = await getChamaDocuments(chamaId);
+        return response;
+      } catch (error) {
+        // Enhanced error logging
+        console.error('Error loading documents:', {
+          error,
+          message: error instanceof Error ? error.message : 'Unknown error',
+        });
+
+        // Handle specific error cases
+        if (error instanceof Response && error.status === 401) {
+          throw new Error("Please log in to view documents");
+        } else if (error instanceof Response && error.status === 403) {
+          throw new Error("You don't have permission to view these documents");
+        }
+        
+        throw error;
+      }
     },
-    {
-      id: 2,
-      name: "Meeting Minutes - January.docx",
-      type: "DOCX",
-      uploadedBy: "Jane Smith",
-      uploadedAt: "2023-01-25",
-      size: "856 KB"
-    },
-    {
-      id: 3,
-      name: "Financial Report Q1.xlsx",
-      type: "XLSX",
-      uploadedBy: "Michael Johnson",
-      uploadedAt: "2023-04-05",
-      size: "725 KB"
-    },
-    {
-      id: 4,
-      name: "Loan Agreement Template.pdf",
-      type: "PDF",
-      uploadedBy: "Sarah Williams",
-      uploadedAt: "2022-11-18",
-      size: "1.4 MB"
+    enabled: true,
+    retry: (failureCount, error) => {
+      // Don't retry on auth errors
+      if (error instanceof Error && 
+         (error.message.includes("log in") || error.message.includes("permission"))) {
+        return false;
+      }
+      return failureCount < 1;
     }
-  ];
+  });
+
+  // All state hooks must be declared before any conditional returns
+  const [errorState, setErrorState] = useState<Error | null>(error instanceof Error ? error : null);
+
+  // Render error state if present
+  if (errorState || error) {
+    const errorMessage = ((errorState || error) instanceof Error 
+      ? (errorState || error)?.message || "Unknown error"
+      : "Unknown error");
+    const isAuthError = typeof errorMessage === 'string' && 
+      (errorMessage.includes("log in") || errorMessage.includes("permission"));
+
+    return (
+      <ChamaLayout>
+        <div className="flex flex-col items-center justify-center p-8">
+          <h2 className="text-2xl font-semibold text-red-600 mb-4">Error Loading Documents</h2>
+          <p className="text-gray-600 mb-4">
+            {errorMessage}
+          </p>
+          {!isAuthError && (
+            <Button 
+              onClick={() => {
+                setErrorState(null);
+                queryClient.invalidateQueries({ queryKey: ["chamaDocuments", chamaId] });
+              }}
+            >
+              Try Again
+            </Button>
+          )}
+        </div>
+      </ChamaLayout>
+    );
+  }
+
+  // Render loading state
+  if (isLoading) {
+    return (
+      <ChamaLayout>
+        <div className="flex justify-center items-center min-h-screen">
+          <Loader2 className="h-8 w-8 animate-spin" />
+        </div>
+      </ChamaLayout>
+    );
+  }
   
-  const categories = {
-    all: documents,
-    legal: documents.filter(doc => doc.name.includes("Constitution") || doc.name.includes("Agreement")),
-    financial: documents.filter(doc => doc.name.includes("Financial") || doc.name.includes("Report")),
-    minutes: documents.filter(doc => doc.name.includes("Minutes")),
+  // Upload mutation
+  const uploadMutation = useMutation({
+    mutationFn: async (data: UploadFormData) => {
+      if (!data.file) throw new Error("No file selected");
+      
+      // Validate file type based on category
+      const fileExtension = data.file.name.split('.').pop()?.toLowerCase() || '';
+      const isValidFileType = validateFileType(fileExtension, data.category);
+      
+      if (!isValidFileType) {
+        throw new Error(`Invalid file type for ${data.category} category`);
+      }
+      
+      return uploadChamaDocument(chamaId, data.file, {
+        category: data.category,
+        description: data.description
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["chamaDocuments", chamaId] });
+      toast({
+        title: "Document uploaded",
+        description: "The document has been uploaded successfully."
+      });
+      setIsUploadDialogOpen(false);
+      setUploadData({ file: null, category: "", description: "" });
+    },
+    onError: (error) => {
+      toast({
+        title: "Upload failed",
+        description: error instanceof Error ? error.message : "Failed to upload document",
+        variant: "destructive"
+      });
+    }
+  });
+
+  // Validate file type based on category
+  const validateFileType = (extension: string, category: string): boolean => {
+    const allowedTypes: Record<string, string[]> = {
+      legal: ['pdf', 'doc', 'docx'],
+      financial: ['pdf', 'xls', 'xlsx', 'csv'],
+      minutes: ['pdf', 'doc', 'docx'],
+      constitution: ['pdf', 'doc', 'docx'],
+      policies: ['pdf', 'doc', 'docx'],
+      contracts: ['pdf', 'doc', 'docx'],
+      other: ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'csv', 'txt']
+    };
+
+    return allowedTypes[category]?.includes(extension) || false;
   };
+
+  // Delete mutation
+  const deleteMutation = useMutation({
+    mutationFn: (documentId: number) => deleteChamaDocument(chamaId, documentId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["chamaDocuments", chamaId] });
+      toast({
+        title: "Document deleted",
+        description: "The document has been deleted successfully."
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "Delete failed",
+        description: error instanceof Error ? error.message : "Failed to delete document",
+        variant: "destructive"
+      });
+    }
+  });
 
   // Handle file upload
-  const handleFileUpload = (e: React.FormEvent) => {
+  const handleFileUpload = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Implement file upload logic
-    setIsUploadDialogOpen(false);
+    uploadMutation.mutate(uploadData);
   };
 
-  // Get file icon based on type
-  const getFileIcon = (type: string) => {
-    switch(type) {
-      case "PDF":
-        return <FileText className="h-6 w-6 text-red-500" />;
-      case "DOCX":
-        return <FileText className="h-6 w-6 text-blue-500" />;
-      case "XLSX":
-        return <FileText className="h-6 w-6 text-green-500" />;
-      default:
-        return <File className="h-6 w-6 text-gray-500" />;
+  // Handle file download
+  const handleDownload = async (document: ChamaDocument) => {
+    try {
+      const blob = await downloadChamaDocument(chamaId, document.id);
+      const url = window.URL.createObjectURL(blob);
+      const link = window.document.createElement('a');
+      link.href = url;
+      link.download = document.name;
+      window.document.body.appendChild(link);
+      link.click();
+      window.URL.revokeObjectURL(url);
+      window.document.body.removeChild(link);
+    } catch (error) {
+      toast({
+        title: "Download failed",
+        description: error instanceof Error ? error.message : "Failed to download document",
+        variant: "destructive"
+      });
     }
+  };
+
+  // Filter documents based on category and search
+  const filterDocuments = (docs: ChamaDocument[], category: string) => {
+    let filtered = docs;
+    
+    // Filter by category
+    if (category !== "all") {
+      filtered = docs.filter(doc => doc.category.toLowerCase() === category.toLowerCase());
+    }
+    
+    // Filter by search query
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter(doc => 
+        doc.name.toLowerCase().includes(query) ||
+        doc.description?.toLowerCase().includes(query) ||
+        doc.category.toLowerCase().includes(query)
+      );
+    }
+    
+    return filtered;
   };
 
   return (
@@ -137,20 +276,40 @@ export default function ChamaDocuments() {
             <form onSubmit={handleFileUpload}>
               <div className="grid gap-4 py-4">
                 <div>
+                  <Label htmlFor="category">Category</Label>
+                  <Select
+                    value={uploadData.category}
+                    onValueChange={(value) => setUploadData(prev => ({ ...prev, category: value }))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select document category" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {Object.entries(DOCUMENT_CATEGORIES).map(([value, label]) => (
+                        <SelectItem key={value} value={value}>
+                          {label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    {uploadData.category && (
+                      <>Allowed file types: {getAllowedFileTypes(uploadData.category)}</>
+                    )}
+                  </p>
+                </div>
+
+                <div>
                   <Label htmlFor="file">File</Label>
                   <Input 
                     id="file"
                     type="file"
                     className="mt-1"
-                  />
-                </div>
-                
-                <div>
-                  <Label htmlFor="category">Category</Label>
-                  <Input 
-                    id="category"
-                    placeholder="E.g. Legal, Financial, Minutes"
-                    className="mt-1"
+                    accept={getAcceptedFileTypes(uploadData.category)}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      setUploadData(prev => ({ ...prev, file: file || null }));
+                    }}
                   />
                 </div>
                 
@@ -160,15 +319,33 @@ export default function ChamaDocuments() {
                     id="description"
                     placeholder="Brief description of the document"
                     className="mt-1"
+                    value={uploadData.description}
+                    onChange={(e) => setUploadData(prev => ({ ...prev, description: e.target.value }))}
                   />
                 </div>
               </div>
               
               <DialogFooter>
-                <Button variant="outline" type="button" onClick={() => setIsUploadDialogOpen(false)}>
+                <Button 
+                  variant="outline" 
+                  type="button" 
+                  onClick={() => setIsUploadDialogOpen(false)}
+                >
                   Cancel
                 </Button>
-                <Button type="submit">Upload</Button>
+                <Button 
+                  type="submit"
+                  disabled={uploadMutation.isPending || !uploadData.file || !uploadData.category}
+                >
+                  {uploadMutation.isPending ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Uploading...
+                    </>
+                  ) : (
+                    "Upload"
+                  )}
+                </Button>
               </DialogFooter>
             </form>
           </DialogContent>
@@ -181,165 +358,166 @@ export default function ChamaDocuments() {
             <div className="flex justify-between items-center border-b mb-4 pb-2">
               <TabsList>
                 <TabsTrigger value="all">All Documents</TabsTrigger>
-                <TabsTrigger value="legal">Legal</TabsTrigger>
-                <TabsTrigger value="financial">Financial</TabsTrigger>
-                <TabsTrigger value="minutes">Meeting Minutes</TabsTrigger>
+                {Object.entries(DOCUMENT_CATEGORIES).map(([value, label]) => (
+                  <TabsTrigger key={value} value={value}>
+                    {label}
+                  </TabsTrigger>
+                ))}
               </TabsList>
               
               <Input 
                 placeholder="Search documents..." 
                 className="max-w-xs"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
               />
             </div>
             
             <TabsContent value="all">
-              <DocumentTable documents={categories.all} />
+              <DocumentTable 
+                documents={filterDocuments(documents, "all")}
+                onDownload={handleDownload}
+                onDelete={(id) => deleteMutation.mutate(id)}
+              />
             </TabsContent>
             
-            <TabsContent value="legal">
-              <DocumentTable documents={categories.legal} />
-            </TabsContent>
-            
-            <TabsContent value="financial">
-              <DocumentTable documents={categories.financial} />
-            </TabsContent>
-            
-            <TabsContent value="minutes">
-              <DocumentTable documents={categories.minutes} />
-            </TabsContent>
+            {Object.keys(DOCUMENT_CATEGORIES).map((category) => (
+              <TabsContent key={category} value={category}>
+                <DocumentTable 
+                  documents={filterDocuments(documents, category)}
+                  onDownload={handleDownload}
+                  onDelete={(id) => deleteMutation.mutate(id)}
+                />
+              </TabsContent>
+            ))}
           </Tabs>
         </CardContent>
       </Card>
-      
-      <div className="mt-8">
-        <h3 className="text-lg font-semibold mb-4">Document Templates</h3>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex flex-col items-center text-center">
-                <FileCog className="h-10 w-10 text-primary mb-4" />
-                <h4 className="font-medium mb-2">Chama Constitution</h4>
-                <p className="text-sm text-muted-foreground mb-4">Standard template for creating your chama's constitution and bylaws.</p>
-                <Button variant="outline" className="w-full">
-                  <Download className="h-4 w-4 mr-2" />
-                  Download Template
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-          
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex flex-col items-center text-center">
-                <FileCog className="h-10 w-10 text-primary mb-4" />
-                <h4 className="font-medium mb-2">Meeting Minutes</h4>
-                <p className="text-sm text-muted-foreground mb-4">Template for recording meeting minutes in a structured format.</p>
-                <Button variant="outline" className="w-full">
-                  <Download className="h-4 w-4 mr-2" />
-                  Download Template
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-          
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex flex-col items-center text-center">
-                <FileCog className="h-10 w-10 text-primary mb-4" />
-                <h4 className="font-medium mb-2">Loan Agreement</h4>
-                <p className="text-sm text-muted-foreground mb-4">Template for creating loan agreements between the chama and borrowers.</p>
-                <Button variant="outline" className="w-full">
-                  <Download className="h-4 w-4 mr-2" />
-                  Download Template
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
     </ChamaLayout>
   );
 }
 
-function DocumentTable({ documents }: { documents: Document[] }) {
+interface DocumentTableProps {
+  documents: ChamaDocument[];
+  onDownload: (document: ChamaDocument) => void;
+  onDelete: (documentId: number) => void;
+}
+
+function DocumentTable({ documents, onDownload, onDelete }: DocumentTableProps) {
+  // Get file icon based on type
+  const getFileIcon = (type: string) => {
+    switch(type.toLowerCase()) {
+      case "pdf":
+        return <FileText className="h-6 w-6 text-red-500" />;
+      case "doc":
+      case "docx":
+        return <FileText className="h-6 w-6 text-blue-500" />;
+      case "xls":
+      case "xlsx":
+        return <FileText className="h-6 w-6 text-green-500" />;
+      default:
+        return <File className="h-6 w-6 text-gray-500" />;
+    }
+  };
+
   return (
-    <div className="rounded-md border">
-      <Table>
-        <TableHeader>
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>Name</TableHead>
+          <TableHead>Category</TableHead>
+          <TableHead>Uploaded By</TableHead>
+          <TableHead>Date</TableHead>
+          <TableHead>Size</TableHead>
+          <TableHead className="w-[100px]">Actions</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {documents.length === 0 ? (
           <TableRow>
-            <TableHead>Name</TableHead>
-            <TableHead>Uploaded By</TableHead>
-            <TableHead>Date</TableHead>
-            <TableHead>Size</TableHead>
-            <TableHead className="w-[50px]"></TableHead>
+            <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+              No documents found
+            </TableCell>
           </TableRow>
-        </TableHeader>
-        <TableBody>
-          {documents.length > 0 ? (
-            documents.map((document) => (
-              <TableRow key={document.id}>
-                <TableCell>
-                  <div className="flex items-center gap-2">
-                    {document.type === "PDF" ? (
-                      <FileText className="h-5 w-5 text-red-500" />
-                    ) : document.type === "DOCX" ? (
-                      <FileText className="h-5 w-5 text-blue-500" />
-                    ) : (
-                      <FileText className="h-5 w-5 text-green-500" />
-                    )}
-                    <span>{document.name}</span>
-                  </div>
-                </TableCell>
-                <TableCell>{document.uploadedBy}</TableCell>
-                <TableCell>{document.uploadedAt}</TableCell>
-                <TableCell>{document.size}</TableCell>
-                <TableCell>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" className="p-0 h-8 w-8">
-                        <span className="sr-only">Open menu</span>
-                        <MoreVertical className="h-4 w-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem>
-                        <Download className="h-4 w-4 mr-2" />
-                        Download
-                      </DropdownMenuItem>
-                      <DropdownMenuItem>
-                        <Edit className="h-4 w-4 mr-2" />
-                        Rename
-                      </DropdownMenuItem>
-                      <DropdownMenuItem className="text-destructive">
-                        <Trash2 className="h-4 w-4 mr-2" />
-                        Delete
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </TableCell>
-              </TableRow>
-            ))
-          ) : (
-            <TableRow>
-              <TableCell colSpan={5} className="text-center h-24">
-                <div className="flex flex-col items-center justify-center gap-2">
-                  <FileArchive className="h-8 w-8 text-muted-foreground" />
-                  <p className="text-muted-foreground">No documents found</p>
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
-                    className="mt-2"
-                    onClick={() => {/* trigger upload dialog */}}
-                  >
-                    <PlusCircle className="h-4 w-4 mr-2" />
-                    Upload Document
-                  </Button>
+        ) : (
+          documents.map((doc) => (
+            <TableRow key={doc.id}>
+              <TableCell className="font-medium">
+                <div className="flex items-center gap-2">
+                  {getFileIcon(doc.fileType)}
+                  {doc.name}
                 </div>
               </TableCell>
+              <TableCell>{doc.category}</TableCell>
+              <TableCell>{doc.uploadedBy}</TableCell>
+              <TableCell>{new Date(doc.uploadedAt).toLocaleDateString()}</TableCell>
+              <TableCell>{formatFileSize(doc.fileSize)}</TableCell>
+              <TableCell>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" className="h-8 w-8 p-0">
+                      <MoreVertical className="h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={() => onDownload(doc)}>
+                      <Download className="mr-2 h-4 w-4" />
+                      Download
+                    </DropdownMenuItem>
+                    <DropdownMenuItem 
+                      onClick={() => onDelete(doc.id)}
+                      className="text-red-600"
+                    >
+                      <Trash2 className="mr-2 h-4 w-4" />
+                      Delete
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </TableCell>
             </TableRow>
-          )}
-        </TableBody>
-      </Table>
-    </div>
+          ))
+        )}
+      </TableBody>
+    </Table>
   );
+}
+
+function formatFileSize(bytes: number): string {
+  const units = ['B', 'KB', 'MB', 'GB'];
+  let size = bytes;
+  let unitIndex = 0;
+  
+  while (size >= 1024 && unitIndex < units.length - 1) {
+    size /= 1024;
+    unitIndex++;
+  }
+  
+  return `${size.toFixed(1)} ${units[unitIndex]}`;
+}
+
+// Helper functions for file types
+function getAllowedFileTypes(category: string): string {
+  const typeMap: Record<string, string> = {
+    legal: 'PDF, DOC, DOCX',
+    financial: 'PDF, XLS, XLSX, CSV',
+    minutes: 'PDF, DOC, DOCX',
+    constitution: 'PDF, DOC, DOCX',
+    policies: 'PDF, DOC, DOCX',
+    contracts: 'PDF, DOC, DOCX',
+    other: 'PDF, DOC, DOCX, XLS, XLSX, CSV, TXT'
+  };
+  return typeMap[category] || '';
+}
+
+function getAcceptedFileTypes(category: string): string {
+  const typeMap: Record<string, string> = {
+    legal: '.pdf,.doc,.docx',
+    financial: '.pdf,.xls,.xlsx,.csv',
+    minutes: '.pdf,.doc,.docx',
+    constitution: '.pdf,.doc,.docx',
+    policies: '.pdf,.doc,.docx',
+    contracts: '.pdf,.doc,.docx',
+    other: '.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt'
+  };
+  return typeMap[category] || '';
 }

@@ -106,22 +106,25 @@ export function useWallet() {
   const transfer = async (amount: number, destinationUserId: number, description?: string) => {
     return createTransactionMutation.mutateAsync({
       type: 'transfer',
-      amount,
+      amount: Math.abs(amount),
       destinationUserId,
       description: description || 'Transfer to user'
     });
   };
 
-  // Transfer funds to another user
+  // Transfer funds to another user by username or email
   const transferByUsernameOrEmail = async (
       amount: number,
       destinationUsernameOrEmail: string,
       description?: string) => {
     const user = await fetchUser({username: destinationUsernameOrEmail});
+    if (!user) {
+      throw new Error('User not found');
+    }
     return createTransactionMutation.mutateAsync({
       type: 'transfer',
-      amount,
-      destinationUserId: user?.id,
+      amount: Math.abs(amount),
+      destinationUserId: user.id,
       description: description || 'Transfer to user'
     });
   };

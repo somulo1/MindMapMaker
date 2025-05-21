@@ -38,6 +38,13 @@ const minutesSchema = z.object({
 
 type MeetingFormValues = z.infer<typeof meetingSchema>;
 type MinutesFormValues = z.infer<typeof minutesSchema>;
+type CreateMeetingData = {
+  title: string;
+  description: string;
+  location: string;
+  agenda: string;
+  scheduledFor: string;
+};
 
 export default function ChamaMeetings() {
   const { id } = useParams<{ id: string }>();
@@ -53,26 +60,67 @@ export default function ChamaMeetings() {
     queryKey: [`/api/chamas/${chamaId}/meetings`],
     queryFn: async () => {
       try {
-        const response = await fetch(`/api/chamas/${chamaId}/meetings`);
+        const response = await fetch(`/api/chamas/${chamaId}/meetings`, {
+          credentials: 'include',
+          headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+          }
+        });
+        
+        if (response.status === 401) {
+          throw new Error('Please log in to view meetings');
+        }
+        
+        if (response.status === 403) {
+          throw new Error('You do not have permission to view meetings');
+        }
+        
         if (!response.ok) {
           throw new Error('Failed to fetch meetings');
         }
+
         const data = await response.json();
-        return data || []; // Ensure we always return an array
+        // Sort meetings by scheduled date
+        return (data || []).sort((a: any, b: any) => 
+          new Date(a.scheduledFor).getTime() - new Date(b.scheduledFor).getTime()
+        );
       } catch (error) {
         console.error('Error fetching meetings:', error);
-        return []; // Return empty array on error
+        toast({
+          title: "Error",
+          description: error instanceof Error ? error.message : 'Failed to fetch meetings',
+          variant: "destructive",
+        });
+        return [];
       }
     },
+    // Refetch every minute to keep meetings up to date
+    refetchInterval: 60 * 1000,
+    // Allow background updates
+    staleTime: 30 * 1000,
+    // Ensure we get fresh data when the component mounts
+    refetchOnMount: true,
     enabled: !isNaN(chamaId)
   });
 
+  // Filter upcoming meetings based on current time
+  const upcomingMeetings = meetings.filter((meeting: any) => {
+    const meetingDate = new Date(meeting.scheduledFor);
+    // Only show meetings that haven't started yet
+    return meetingDate > new Date() && meeting.status === "upcoming";
+  }).sort((a: any, b: any) => new Date(a.scheduledFor).getTime() - new Date(b.scheduledFor).getTime());
+
   // Mutations
   const createMeetingMutation = useMutation({
-    mutationFn: async (data: MeetingFormValues) => {
+    mutationFn: async (data: CreateMeetingData) => {
       const response = await fetch(`/api/chamas/${chamaId}/meetings`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        headers: { 
+          'Accept': 'application/json',
+          'Content-Type': 'application/json' 
+        },
         body: JSON.stringify(data),
       });
       if (!response.ok) {
@@ -102,6 +150,11 @@ export default function ChamaMeetings() {
     mutationFn: async (meetingId: number) => {
       const response = await fetch(`/api/chamas/${chamaId}/meetings/${meetingId}/remind`, {
         method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
+        }
       });
       if (!response.ok) {
         const error = await response.json();
@@ -132,6 +185,7 @@ export default function ChamaMeetings() {
 
       const response = await fetch(`/api/chamas/${chamaId}/meetings/${data.meetingId}/minutes`, {
         method: 'POST',
+        credentials: 'include',
         body: formData,
       });
       if (!response.ok) {
@@ -180,7 +234,23 @@ export default function ChamaMeetings() {
 
   // Handlers
   const onNewMeetingSubmit = (data: MeetingFormValues) => {
-    createMeetingMutation.mutate(data);
+    // Format the date and time into ISO string
+    const scheduledDateTime = new Date(
+      data.date.getFullYear(),
+      data.date.getMonth(),
+      data.date.getDate(),
+      ...data.time.split(':').map(Number)
+    ).toISOString();
+
+    const meetingData: CreateMeetingData = {
+      title: data.title,
+      description: data.description,
+      location: data.location,
+      agenda: data.agenda,
+      scheduledFor: scheduledDateTime
+    };
+
+    createMeetingMutation.mutate(meetingData);
   };
 
   const onUploadMinutesSubmit = (data: MinutesFormValues) => {
@@ -244,10 +314,14 @@ export default function ChamaMeetings() {
                   <div>
                     <CardTitle>{meeting.title}</CardTitle>
                     <CardDescription>
-                      {format(new Date(meeting.date), "MMMM d, yyyy")} at {meeting.time}
+                      {format(new Date(meeting.scheduledFor), "MMMM d, yyyy 'at' h:mm a")}
                     </CardDescription>
                   </div>
-                  <Badge variant={meeting.status === "upcoming" ? "default" : "secondary"}>
+                  <Badge variant={
+                    meeting.status === "upcoming" && new Date(meeting.scheduledFor) > new Date()
+                      ? "default"
+                      : "secondary"
+                  }>
                     {meeting.status}
                   </Badge>
                 </div>

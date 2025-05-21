@@ -1,5 +1,10 @@
+import { useState } from "react";
 import { useParams } from "wouter";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
+import { format } from "date-fns";
 import { formatDistanceToNow } from "date-fns";
 import ChamaLayout from "@/components/layout/ChamaLayout";
 import StatCard from "@/components/dashboard/StatCard";
@@ -8,20 +13,49 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   PiggyBank,
   Users,
-  Calendar,
+  Calendar as CalendarIcon,
   TrendingUp,
   BarChart4,
   Clock,
   ArrowRight,
   AlertTriangle,
   CheckCircle2,
-  Edit3
+  Edit3,
+  Loader2
 } from "lucide-react";
-import { Chama, Contribution, Meeting } from "@shared/schema";
+import { Chama, Contribution, ChamaMemberWithUser, Meeting } from "@shared/schema";
 import { getChama, getChamaMembers, getChamaContributions, getChamaMeetings } from "@/services/api";
+import { useToast } from "@/hooks/use-toast";
+import { queryClient } from "@/lib/queryClient";
+import { cn } from "@/lib/utils";
+
+// Form schemas
+const meetingSchema = z.object({
+  title: z.string().min(1, "Title is required"),
+  description: z.string().min(1, "Description is required"),
+  date: z.date(),
+  time: z.string().min(1, "Time is required"),
+  location: z.string().min(1, "Location is required"),
+  agenda: z.string().min(1, "Agenda is required"),
+});
+
+type MeetingFormValues = z.infer<typeof meetingSchema>;
+type CreateMeetingData = {
+  title: string;
+  description: string;
+  location: string;
+  agenda: string;
+  scheduledFor: string;
+};
 
 interface ChamaDashboardProps {
   id?: string;
@@ -30,22 +64,24 @@ interface ChamaDashboardProps {
 export default function ChamaDashboard({ id: propId }: ChamaDashboardProps = {}) {
   const params = useParams<{ id: string }>();
   const chamaId = parseInt(propId || params?.id || '0');
+  const { toast } = useToast();
+  const [openNewMeetingDialog, setOpenNewMeetingDialog] = useState(false);
   
   const { data: chama, isLoading: isChamaLoading } = useQuery<Chama>({
     queryKey: [`/api/chamas/${chamaId}`],
     enabled: !isNaN(chamaId) && chamaId > 0,
     queryFn: async () => {
       const response = await getChama(chamaId);
-      return response.chama;
+      return response;
     }
   });
 
-  const { data: members = [], isLoading: isMembersLoading } = useQuery({
+  const { data: members = [], isLoading: isMembersLoading } = useQuery<ChamaMemberWithUser[]>({
     queryKey: [`/api/chamas/${chamaId}/members`],
     enabled: !isNaN(chamaId) && chamaId > 0,
     queryFn: async () => {
       const response = await getChamaMembers(chamaId);
-      return response.members;
+      return response;
     }
   });
 
@@ -54,7 +90,7 @@ export default function ChamaDashboard({ id: propId }: ChamaDashboardProps = {})
     enabled: !isNaN(chamaId) && chamaId > 0,
     queryFn: async () => {
       const response = await getChamaContributions(chamaId);
-      return response.contributions;
+      return response;
     }
   });
 
@@ -62,10 +98,111 @@ export default function ChamaDashboard({ id: propId }: ChamaDashboardProps = {})
     queryKey: [`/api/chamas/${chamaId}/meetings`],
     enabled: !isNaN(chamaId) && chamaId > 0,
     queryFn: async () => {
-      const response = await getChamaMeetings(chamaId);
-      return response.meetings;
-    }
+      try {
+        const response = await getChamaMeetings(chamaId);
+        // Sort meetings by scheduled date
+        return (response || []).sort((a: any, b: any) => 
+          new Date(a.scheduledFor).getTime() - new Date(b.scheduledFor).getTime()
+        );
+      } catch (error) {
+        console.error('Error fetching meetings:', error);
+        toast({
+          title: "Error",
+          description: error instanceof Error ? error.message : 'Failed to fetch meetings',
+          variant: "destructive",
+        });
+        return [];
+      }
+    },
+    // Refetch every minute to keep meetings up to date
+    refetchInterval: 60 * 1000,
+    // Allow background updates
+    staleTime: 30 * 1000,
+    // Ensure we get fresh data when the component mounts
+    refetchOnMount: true
   });
+
+  // Filter upcoming meetings and sort by date
+  const upcomingMeetings = meetings
+    .filter(meeting => {
+      const meetingDate = new Date(meeting.scheduledFor);
+      // Only show meetings that haven't started yet
+      return meetingDate > new Date() && meeting.status === "upcoming";
+    })
+    .sort((a, b) => new Date(a.scheduledFor).getTime() - new Date(b.scheduledFor).getTime());
+
+  // Get the next meeting (closest upcoming meeting)
+  const nextMeeting = upcomingMeetings.length > 0 ? upcomingMeetings[0] : null;
+
+  // Meeting form
+  const meetingForm = useForm<MeetingFormValues>({
+    resolver: zodResolver(meetingSchema),
+    defaultValues: {
+      title: "",
+      description: "",
+      date: new Date(),
+      time: "",
+      location: "",
+      agenda: "",
+    },
+  });
+
+  // Meeting mutation
+  const createMeetingMutation = useMutation({
+    mutationFn: async (data: CreateMeetingData) => {
+      const response = await fetch(`/api/chamas/${chamaId}/meetings`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 
+          'Accept': 'application/json',
+          'Content-Type': 'application/json' 
+        },
+        body: JSON.stringify(data),
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Failed to create meeting');
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      // Invalidate both the meetings list and any specific meeting queries
+      queryClient.invalidateQueries({ queryKey: [`/api/chamas/${chamaId}/meetings`] });
+      toast({
+        title: "Meeting scheduled",
+        description: "The meeting has been successfully scheduled.",
+      });
+      setOpenNewMeetingDialog(false);
+      meetingForm.reset();
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Failed to schedule meeting",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const onNewMeetingSubmit = (data: MeetingFormValues) => {
+    // Format the date and time into ISO string
+    const scheduledDateTime = new Date(
+      data.date.getFullYear(),
+      data.date.getMonth(),
+      data.date.getDate(),
+      ...data.time.split(':').map(Number)
+    ).toISOString();
+
+    const meetingData: CreateMeetingData = {
+      title: data.title,
+      description: data.description,
+      location: data.location,
+      agenda: data.agenda,
+      scheduledFor: scheduledDateTime
+    };
+
+    createMeetingMutation.mutate(meetingData);
+  };
 
   if (isChamaLoading || isMembersLoading || isContributionsLoading || isMeetingsLoading) {
     return (
@@ -99,33 +236,26 @@ export default function ChamaDashboard({ id: propId }: ChamaDashboardProps = {})
   // Calculate chama statistics
   const totalMembers = members.length;
   
-  const totalContributions = contributions.reduce((sum, contrib) => {
+  const totalContributions = contributions?.reduce((sum, contrib) => {
     if (contrib.status === 'paid') {
       return sum + parseFloat(contrib.amount.toString());
     }
     return sum;
-  }, 0);
+  }, 0) || 0;
   
-  const pendingContributions = contributions.reduce((sum, contrib) => {
+  const pendingContributions = contributions?.reduce((sum, contrib) => {
     if (contrib.status === 'pending') {
       return sum + parseFloat(contrib.amount.toString());
     }
     return sum;
-  }, 0);
+  }, 0) || 0;
   
-  const overdueContributions = contributions.reduce((sum, contrib) => {
+  const overdueContributions = contributions?.reduce((sum, contrib) => {
     if (contrib.status === 'overdue') {
       return sum + parseFloat(contrib.amount.toString());
     }
     return sum;
-  }, 0);
-
-  // Next meeting
-  const upcomingMeetings = meetings
-    .filter(meeting => new Date(meeting.scheduledFor) > new Date())
-    .sort((a, b) => new Date(a.scheduledFor).getTime() - new Date(b.scheduledFor).getTime());
-  
-  const nextMeeting = upcomingMeetings.length > 0 ? upcomingMeetings[0] : null;
+  }, 0) || 0;
 
   // Mock data for investments and distributions
   const investmentData = [
@@ -174,22 +304,30 @@ export default function ChamaDashboard({ id: propId }: ChamaDashboardProps = {})
         <StatCard
           title="Next Meeting"
           value={nextMeeting 
-            ? new Date(nextMeeting.scheduledFor).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+            ? nextMeeting.title
             : "No upcoming meetings"}
-          icon={Calendar}
+          icon={CalendarIcon}
           iconClassName="text-accent"
           footer={
             nextMeeting ? (
-              <div className="flex justify-between items-center w-full">
-                <span className="text-sm text-muted-foreground">
-                  {new Date(nextMeeting.scheduledFor).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
-                </span>
-                <Button variant="link" size="sm" className="text-primary p-0">
-                  View Details
-                </Button>
+              <div className="flex flex-col w-full gap-1">
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-muted-foreground">
+                    {format(new Date(nextMeeting.scheduledFor), "MMMM d, yyyy 'at' h:mm a")}
+                  </span>
+                  <Badge variant="outline" className="ml-2">
+                    {formatDistanceToNow(new Date(nextMeeting.scheduledFor), { addSuffix: true })}
+                  </Badge>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-muted-foreground">{nextMeeting.location}</span>
+                  <Button variant="link" size="sm" className="text-primary p-0" asChild>
+                    <a href={`/chamas/${chamaId}/meetings`}>View Details</a>
+                  </Button>
+                </div>
               </div>
             ) : (
-              <Button variant="outline" size="sm" className="w-full">
+              <Button variant="outline" size="sm" className="w-full" onClick={() => setOpenNewMeetingDialog(true)}>
                 Schedule Meeting
               </Button>
             )
@@ -374,44 +512,72 @@ export default function ChamaDashboard({ id: propId }: ChamaDashboardProps = {})
                   Next {upcomingMeetings.length} scheduled meetings
                 </CardDescription>
               </div>
-              <Button variant="outline" size="sm">Schedule</Button>
+              <Button variant="outline" size="sm" onClick={() => setOpenNewMeetingDialog(true)}>
+                <CalendarIcon className="h-4 w-4 mr-2" />
+                Schedule
+              </Button>
             </div>
           </CardHeader>
           <CardContent>
             {upcomingMeetings.length === 0 ? (
               <div className="text-center py-8">
-                <Calendar className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
+                <CalendarIcon className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
                 <h3 className="font-medium mb-1">No Upcoming Meetings</h3>
                 <p className="text-sm text-muted-foreground mb-4">
                   There are no meetings scheduled. Click below to schedule one.
                 </p>
-                <Button>Schedule a Meeting</Button>
+                <Button onClick={() => setOpenNewMeetingDialog(true)}>
+                  <CalendarIcon className="h-4 w-4 mr-2" />
+                  Schedule a Meeting
+                </Button>
               </div>
             ) : (
               <div className="space-y-4">
                 {upcomingMeetings.slice(0, 3).map((meeting) => (
                   <div key={meeting.id} className="rounded-lg border p-4">
                     <div className="flex justify-between items-start mb-2">
-                      <h4 className="font-medium">{meeting.title}</h4>
-                      <Badge>{formatDistanceToNow(new Date(meeting.scheduledFor), { addSuffix: true })}</Badge>
+                      <div>
+                        <h4 className="font-medium">{meeting.title}</h4>
+                        <p className="text-sm text-muted-foreground">
+                          {format(new Date(meeting.scheduledFor), "MMMM d, yyyy 'at' h:mm a")}
+                        </p>
+                      </div>
+                      <Badge variant="outline">
+                        {formatDistanceToNow(new Date(meeting.scheduledFor), { addSuffix: true })}
+                      </Badge>
                     </div>
-                    <p className="text-sm text-muted-foreground mb-2">
-                      {meeting.description}
-                    </p>
-                    <div className="flex justify-between items-center text-sm">
-                      <div className="flex items-center gap-1">
-                        <Clock className="h-4 w-4 text-muted-foreground" />
-                        <span>
-                          {new Date(meeting.scheduledFor).toLocaleDateString()}{' '}
-                          {new Date(meeting.scheduledFor).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                        </span>
+                    <div className="space-y-4">
+                      <div>
+                        <h5 className="text-sm font-medium mb-1">Description</h5>
+                        <p className="text-sm text-muted-foreground">{meeting.description}</p>
                       </div>
                       <div>
-                        <a href="#" className="text-primary font-medium">View</a>
+                        <h5 className="text-sm font-medium mb-1">Location</h5>
+                        <p className="text-sm text-muted-foreground">{meeting.location}</p>
                       </div>
+                      {meeting.agenda && (
+                        <div>
+                          <h5 className="text-sm font-medium mb-1">Agenda</h5>
+                          <p className="text-sm text-muted-foreground">{meeting.agenda}</p>
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex justify-end mt-4">
+                      <Button variant="link" size="sm" className="p-0" asChild>
+                        <a href={`/chamas/${chamaId}/meetings`}>View Details</a>
+                      </Button>
                     </div>
                   </div>
                 ))}
+                {upcomingMeetings.length > 3 && (
+                  <div className="flex justify-center">
+                    <Button variant="link" asChild>
+                      <a href={`/chamas/${chamaId}/meetings`}>
+                        View All Meetings ({upcomingMeetings.length})
+                      </a>
+                    </Button>
+                  </div>
+                )}
               </div>
             )}
           </CardContent>
@@ -474,6 +640,162 @@ export default function ChamaDashboard({ id: propId }: ChamaDashboardProps = {})
           </Card>
         </div>
       </div>
+
+      {/* New Meeting Dialog */}
+      <Dialog open={openNewMeetingDialog} onOpenChange={setOpenNewMeetingDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Schedule New Meeting</DialogTitle>
+            <DialogDescription>
+              Schedule a new meeting for your chama members.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <Form {...meetingForm}>
+            <form onSubmit={meetingForm.handleSubmit(onNewMeetingSubmit)} className="space-y-4">
+              <FormField
+                control={meetingForm.control}
+                name="title"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Title</FormLabel>
+                    <FormControl>
+                      <Input {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              
+              <FormField
+                control={meetingForm.control}
+                name="description"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Description</FormLabel>
+                    <FormControl>
+                      <Textarea {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              
+              <div className="grid grid-cols-2 gap-4">
+                <FormField
+                  control={meetingForm.control}
+                  name="date"
+                  render={({ field }) => (
+                    <FormItem className="flex flex-col">
+                      <FormLabel>Date</FormLabel>
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <FormControl>
+                            <Button
+                              variant="outline"
+                              className={cn(
+                                "w-full pl-3 text-left font-normal",
+                                !field.value && "text-muted-foreground"
+                              )}
+                            >
+                              {field.value ? (
+                                format(field.value, "PPP")
+                              ) : (
+                                <span>Pick a date</span>
+                              )}
+                              <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
+                            </Button>
+                          </FormControl>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0" align="start">
+                          <Calendar
+                            mode="single"
+                            selected={field.value}
+                            onSelect={field.onChange}
+                            disabled={(date) =>
+                              date < new Date()
+                            }
+                            initialFocus
+                          />
+                        </PopoverContent>
+                      </Popover>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                
+                <FormField
+                  control={meetingForm.control}
+                  name="time"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Time</FormLabel>
+                      <FormControl>
+                        <Input type="time" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+              
+              <FormField
+                control={meetingForm.control}
+                name="location"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Location</FormLabel>
+                    <FormControl>
+                      <Input {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              
+              <FormField
+                control={meetingForm.control}
+                name="agenda"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Agenda</FormLabel>
+                    <FormControl>
+                      <Textarea {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setOpenNewMeetingDialog(false)}
+                >
+                  Cancel
+                </Button>
+                <Button 
+                  type="submit"
+                  disabled={createMeetingMutation.isPending}
+                >
+                  {createMeetingMutation.isPending ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Scheduling...
+                    </>
+                  ) : (
+                    <>
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      Schedule Meeting
+                    </>
+                  )}
+                </Button>
+              </DialogFooter>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
     </ChamaLayout>
   );
 }

@@ -1,4 +1,4 @@
-import { X, BellRing, AlertCircle, CreditCard, Users } from "lucide-react";
+import { X, BellRing, AlertCircle, CreditCard, Users, Check, X as XIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -64,8 +64,35 @@ export default function NotificationPanel() {
     },
   });
 
+  const handleInvitationResponse = useMutation({
+    mutationFn: async ({ invitationId, accept }: { invitationId: number; accept: boolean }) => {
+      return apiRequest(
+        "POST", 
+        `/api/chama-invitations/${invitationId}/${accept ? 'accept' : 'reject'}`
+      );
+    },
+    onSuccess: (data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
+      toast({
+        title: variables.accept ? "Invitation Accepted" : "Invitation Declined",
+        description: variables.accept 
+          ? "You have successfully joined the chama group." 
+          : "You have declined the invitation.",
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "Error",
+        description: "Failed to process the invitation response",
+        variant: "destructive",
+      });
+    },
+  });
+
   const getNotificationIcon = (type: string) => {
     switch (type) {
+      case "chama_invitation":
+        return <Users className="text-primary p-2 bg-primary/10 rounded-full" />;
       case "meeting_scheduled":
         return <Users className="text-info p-2 bg-info/10 rounded-full" />;
       case "contribution_due":
@@ -83,6 +110,38 @@ export default function NotificationPanel() {
     } catch (e) {
       return "some time ago";
     }
+  };
+
+  const renderNotificationActions = (notification: Notification) => {
+    if (notification.type === "chama_invitation" && !notification.read) {
+      const invitationId = notification.relatedId;
+      if (!invitationId) return null;
+
+      return (
+        <div className="flex gap-2 mt-2">
+          <Button
+            size="sm"
+            className="w-full"
+            onClick={() => handleInvitationResponse.mutate({ invitationId, accept: true })}
+            disabled={handleInvitationResponse.isPending}
+          >
+            <Check className="h-4 w-4 mr-1" />
+            Accept
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            className="w-full"
+            onClick={() => handleInvitationResponse.mutate({ invitationId, accept: false })}
+            disabled={handleInvitationResponse.isPending}
+          >
+            <XIcon className="h-4 w-4 mr-1" />
+            Decline
+          </Button>
+        </div>
+      );
+    }
+    return null;
   };
 
   const panelClasses = `
@@ -113,21 +172,17 @@ export default function NotificationPanel() {
               {notifications.map((notification) => (
                 <div 
                   key={notification.id} 
-                  className={`p-4 hover:bg-muted/50 cursor-pointer ${notification.read ? 'opacity-60' : ''}`}
-                  onClick={() => {
-                    if (!notification.read) {
-                      markAsReadMutation.mutate(notification.id);
-                    }
-                  }}
+                  className={`p-4 hover:bg-muted/50 ${notification.read ? 'opacity-60' : ''}`}
                 >
                   <div className="flex items-start gap-3">
                     {getNotificationIcon(notification.type)}
-                    <div>
+                    <div className="flex-1">
                       <p className="text-sm font-medium">{notification.title}</p>
                       <p className="text-xs text-muted-foreground mt-1">{notification.content}</p>
                       <p className="text-xs text-muted-foreground/60 mt-2">
                         {notification.createdAt ? formatTime(notification.createdAt.toString()) : 'Unknown time'}
                       </p>
+                      {renderNotificationActions(notification)}
                     </div>
                   </div>
                 </div>

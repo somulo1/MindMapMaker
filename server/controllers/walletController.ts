@@ -103,6 +103,10 @@ export async function createTransaction(req: Request, res: Response) {
       let destinationWalletId;
       
       if (validatedData.destinationUserId) {
+        // Prevent self-transfers
+        if (validatedData.destinationUserId === userId) {
+          return res.status(400).json({ message: "Cannot transfer money to yourself" });
+        }
         const destUserWallet = await storage.getUserWallet(validatedData.destinationUserId);
         if (!destUserWallet) {
           return res.status(404).json({ message: "Destination user wallet not found" });

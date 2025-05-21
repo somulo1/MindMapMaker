@@ -23,6 +23,7 @@ import * as chatController from "./controllers/chatController";
 import * as wishlistController from "./controllers/wishlistController";
 import * as cartController from "./controllers/cartController";
 import * as adminController from "./controllers/adminController";
+import * as chamaInvitationController from "./controllers/chamaInvitationController";
 
 const SessionStore = MemoryStore(session);
 
@@ -116,7 +117,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   };
   // Helper function to verify chama membership
   const verifyChamaMembership = async (req: any, res: any, next: any) => {
-    const chamaId = parseInt(req.params.chamaId);
+    const chamaId = parseInt(req.params.id);
     if (isNaN(chamaId)) {
       return res.status(400).json({ message: "Invalid chama ID" });
     }
@@ -133,8 +134,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/chamas/:chamaId/members", requireAuth, verifyChamaMembership, async (req, res) => {
     try {
       const chamaId = parseInt(req.params.chamaId);
+      
+      // Clean up any duplicate members first
+      await storage.cleanupDuplicateMembers(chamaId);
+      
       const members = await storage.getChamaMembers(chamaId);
-      res.json(members);
+      
+      // Enrich members with user details
+      const membersWithUserDetails = await Promise.all(
+        members.map(async (member) => {
+          const user = await storage.getUser(member.userId);
+          return {
+            ...member,
+            user: user ? {
+              id: user.id,
+              username: user.username,
+              fullName: user.fullName,
+              email: user.email,
+              profilePic: user.profilePic,
+              location: user.location,
+              phoneNumber: user.phoneNumber
+            } : null
+          };
+        })
+      );
+      
+      res.json({ members: membersWithUserDetails });
     } catch (error) {
       res.status(500).json({ message: "Server error" });
     }
@@ -166,12 +191,200 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/chamas/:id/members", isAuthenticated, handleErrors(chamaController.addChamaMember));
   app.get("/api/chamas/:id/members", isAuthenticated, handleErrors(chamaController.getChamaMembers));
 
+  // Document routes
+  app.get("/api/chamas/:id/documents", isAuthenticated, verifyChamaMembership, async (req, res) => {
+    try {
+      const chamaId = parseInt(req.params.id);
+      const documents = await storage.getChamaDocuments(chamaId);
+      res.setHeader('Content-Type', 'application/json');
+      res.json(documents);
+    } catch (error) {
+      console.error('Error fetching documents:', error);
+      res.status(500).json({ message: "Failed to fetch documents" });
+    }
+  });
+
+  app.post("/api/chamas/:id/documents", isAuthenticated, verifyChamaMembership, async (req, res) => {
+    try {
+      const chamaId = parseInt(req.params.id);
+      const userId = (req.user as any).id;
+      const document = await storage.createChamaDocument({
+        ...req.body,
+        chamaId,
+        uploadedBy: userId
+      });
+      res.setHeader('Content-Type', 'application/json');
+      res.status(201).json(document);
+    } catch (error) {
+      console.error('Error creating document:', error);
+      res.status(500).json({ message: "Failed to create document" });
+    }
+  });
+
+  app.get("/api/chamas/:id/documents/:documentId/download", isAuthenticated, verifyChamaMembership, async (req, res) => {
+    try {
+      const chamaId = parseInt(req.params.id);
+      const documentId = parseInt(req.params.documentId);
+      const document = await storage.getChamaDocument(chamaId, documentId);
+      if (!document) {
+        return res.status(404).json({ message: "Document not found" });
+      }
+      res.setHeader('Content-Type', document.fileType);
+      res.download(document.fileUrl);
+    } catch (error) {
+      console.error('Error downloading document:', error);
+      res.status(500).json({ message: "Failed to download document" });
+    }
+  });
+
+  app.delete("/api/chamas/:id/documents/:documentId", isAuthenticated, verifyChamaMembership, async (req, res) => {
+    try {
+      const chamaId = parseInt(req.params.id);
+      const documentId = parseInt(req.params.documentId);
+      await storage.deleteChamaDocument(chamaId, documentId);
+      res.setHeader('Content-Type', 'application/json');
+      res.json({ message: "Document deleted successfully" });
+    } catch (error) {
+      console.error('Error deleting document:', error);
+      res.status(500).json({ message: "Failed to delete document" });
+    }
+  });
+
+  // Chama invitation routes
+  app.post("/api/chamas/:chamaId/invitations", isAuthenticated, handleErrors(chamaInvitationController.sendInvitation));
+  app.get("/api/chamas/:chamaId/invitations", isAuthenticated, handleErrors(chamaInvitationController.getChamaInvitations));
+  app.get("/api/invitations", isAuthenticated, handleErrors(chamaInvitationController.getUserInvitations));
+  app.post("/api/invitations/:invitationId/accept", isAuthenticated, handleErrors(chamaInvitationController.acceptInvitation));
+  app.post("/api/invitations/:invitationId/reject", isAuthenticated, handleErrors(chamaInvitationController.rejectInvitation));
+  app.post("/api/invitations/:invitationId/cancel", isAuthenticated, handleErrors(chamaInvitationController.cancelInvitation));
+
   // Wallet routes
   app.get("/api/wallets/user", isAuthenticated, handleErrors(walletController.getUserWallet));
   app.get("/api/wallets/chama/:chamaId", isAuthenticated, handleErrors(walletController.getChamaWallet));
   app.post("/api/transactions", isAuthenticated, handleErrors(walletController.createTransaction));
   app.get("/api/transactions/user", isAuthenticated, handleErrors(walletController.getUserTransactions));
   app.get("/api/transactions/chama/:chamaId", isAuthenticated, handleErrors(walletController.getChamaTransactions));
+
+  // Contribution routes
+  app.get("/api/chamas/:id/contributions", isAuthenticated, verifyChamaMembership, async (req, res) => {
+    try {
+      const chamaId = parseInt(req.params.id);
+      const contributions = await storage.getChamaContributions(chamaId);
+      
+      // Enrich contributions with member data
+      const enrichedContributions = await Promise.all(
+        contributions.map(async (contribution) => {
+          const user = await storage.getUser(contribution.userId);
+          return {
+            ...contribution,
+            member: user ? {
+              id: user.id,
+              username: user.username,
+              fullName: user.fullName,
+              email: user.email,
+              profilePic: user.profilePic,
+              location: user.location,
+              phoneNumber: user.phoneNumber
+            } : null
+          };
+        })
+      );
+      
+      res.json({ contributions: enrichedContributions });
+    } catch (error) {
+      res.status(500).json({ message: "Server error" });
+    }
+  });
+
+  app.post("/api/chamas/:id/contributions", isAuthenticated, verifyChamaMembership, async (req, res) => {
+    try {
+      const chamaId = parseInt(req.params.id);
+      const { amount } = req.body;
+      const userId = (req.user as any).id;
+
+      // Create contribution
+      const contribution = await storage.createContribution({
+        chamaId,
+        userId,
+        amount: parseFloat(amount),
+        dueDate: new Date(),
+        status: "pending"
+      });
+
+      // Immediately try to pay the contribution
+      try {
+        const result = await storage.payContribution(contribution.id);
+        res.status(201).json(result);
+      } catch (error) {
+        // If payment fails, still return the created contribution
+        res.status(201).json({ contribution });
+      }
+    } catch (error) {
+      console.error("Error creating contribution:", error);
+      res.status(500).json({ message: "Server error" });
+    }
+  });
+
+  app.post("/api/contributions/:contributionId/pay", isAuthenticated, async (req, res) => {
+    try {
+      const contributionId = parseInt(req.params.contributionId);
+      const userId = (req.user as any).id;
+
+      // Get the contribution
+      const contribution = await storage.getContribution(contributionId);
+      if (!contribution) {
+        return res.status(404).json({ message: "Contribution not found" });
+      }
+
+      // Verify the user is the contributor
+      if (contribution.userId !== userId) {
+        return res.status(403).json({ message: "Not authorized to pay this contribution" });
+      }
+
+      // Get user's wallet
+      const userWallet = await storage.getUserWallet(userId);
+      if (!userWallet) {
+        return res.status(404).json({ message: "User wallet not found" });
+      }
+
+      // Check if user has enough balance
+      if (userWallet.balance < contribution.amount) {
+        return res.status(400).json({ message: "Insufficient funds" });
+      }
+
+      // Get chama wallet
+      const chamaWallet = await storage.getChamaWallet(contribution.chamaId);
+      if (!chamaWallet) {
+        return res.status(404).json({ message: "Chama wallet not found" });
+      }
+
+      // Create transaction
+      const transaction = await storage.createTransaction({
+        userId,
+        chamaId: contribution.chamaId,
+        type: "contribution",
+        amount: contribution.amount,
+        description: `Contribution payment #${contributionId}`,
+        sourceWallet: userWallet.id,
+        destinationWallet: chamaWallet.id,
+        status: "completed"
+      });
+
+      // Update contribution status
+      const updatedContribution = await storage.updateContribution(contributionId, {
+        status: "paid",
+        paidAt: new Date()
+      });
+
+      res.json({
+        message: "Contribution paid successfully",
+        contribution: updatedContribution,
+        transaction
+      });
+    } catch (error) {
+      res.status(500).json({ message: "Server error" });
+    }
+  });
 
   // Marketplace routes
   app.get("/api/marketplace", handleErrors(marketplaceController.getMarketplaceItems));
@@ -201,6 +414,77 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.put("/api/admin/users/:id", isAdmin, handleErrors(adminController.updateUser));
   app.post("/api/admin/users/:id/toggle-block", isAdmin, handleErrors(adminController.toggleUserBlock));
   app.delete("/api/admin/users/:id", isAdmin, handleErrors(adminController.deleteUser));
+
+  // Meeting routes
+  app.get("/api/chamas/:id/meetings", isAuthenticated, verifyChamaMembership, async (req, res) => {
+    try {
+      const chamaId = parseInt(req.params.id);
+      const meetings = await storage.getChamaMeetings(chamaId);
+      
+      // Update meeting statuses based on scheduled time
+      const updatedMeetings = await Promise.all(meetings.map(async meeting => {
+        const meetingDate = new Date(meeting.scheduledFor);
+        const now = new Date();
+        
+        if (meeting.status === "upcoming" && meetingDate < now) {
+          const updated = await storage.updateMeeting(meeting.id, {
+            status: "completed"
+          });
+          return updated;
+        }
+        return meeting;
+      }));
+      
+      res.json(updatedMeetings);
+    } catch (error) {
+      res.status(500).json({ message: "Server error" });
+    }
+  });
+
+  app.post("/api/chamas/:id/meetings", isAuthenticated, verifyChamaMembership, async (req, res) => {
+    try {
+      const chamaId = parseInt(req.params.id);
+      const { title, description, scheduledFor, location, agenda } = req.body;
+      
+      // Validate scheduledFor date
+      const meetingDate = new Date(scheduledFor);
+      if (isNaN(meetingDate.getTime())) {
+        return res.status(400).json({ message: "Invalid meeting date" });
+      }
+      
+      const meeting = await storage.createMeeting({
+        chamaId,
+        title,
+        description: description || null,
+        scheduledFor,
+        location: location || null,
+        agenda: agenda || null,
+        status: meetingDate > new Date() ? "upcoming" : "completed",
+        minutes: null
+      });
+
+      res.status(201).json(meeting);
+    } catch (error) {
+      res.status(500).json({ message: "Server error" });
+    }
+  });
+
+  app.post("/api/chamas/:id/meetings/:meetingId/minutes", isAuthenticated, verifyChamaMembership, async (req, res) => {
+    try {
+      const chamaId = parseInt(req.params.id);
+      const meetingId = parseInt(req.params.meetingId);
+      const { content, fileUrl } = req.body;
+
+      const meeting = await storage.updateMeeting(meetingId, {
+        minutes: { content, fileUrl: fileUrl || null },
+        status: "completed"
+      });
+
+      res.json(meeting);
+    } catch (error) {
+      res.status(500).json({ message: "Server error" });
+    }
+  });
 
   // Create HTTP server
   const httpServer = createServer(app);

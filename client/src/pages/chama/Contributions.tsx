@@ -31,21 +31,46 @@ import {
 } from "lucide-react";
 import { queryClient } from "@/lib/queryClient";
 import { getChamaContributions, getChamaMembers, createContribution, payContribution, transferToChama, getChamaWallet } from "@/services/api";
-import { Contribution, ChamaMember } from "@shared/schema";
+import { Contribution, ChamaMember, ChamaMemberWithUser, Wallet, Transaction } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
 import { formatCurrency } from "@/lib/utils";
 
+// Extend the Contribution type to include member data
+type EnrichedContribution = Contribution & {
+  member?: {
+    id: number;
+    username: string;
+    fullName: string;
+    email: string;
+    profilePic?: string;
+    location?: string;
+    phoneNumber?: string;
+  } | null;
+};
+
 // Form schema for creating a new contribution
 const contributionSchema = z.object({
-  memberId: z.string().min(1, { message: "Please select a member" }),
   amount: z.string().min(1, { message: "Please enter an amount" })
     .refine(val => !isNaN(Number(val)) && Number(val) > 0, {
       message: "Amount must be a positive number",
     }),
-  dueDate: z.string().min(1, { message: "Please select a due date" }),
 });
 
 type ContributionFormValues = z.infer<typeof contributionSchema>;
+
+// API response types
+interface ContributionsResponse {
+  contributions: EnrichedContribution[];
+}
+
+interface ContributionPaymentResponse {
+  contribution: Contribution;
+  transaction: Transaction;
+}
+
+interface MutationContext {
+  previousContributions: ContributionsResponse | undefined;
+}
 
 export default function ChamaContributions() {
   const { id } = useParams<{ id: string }>();
@@ -57,106 +82,92 @@ export default function ChamaContributions() {
   const [openNewContributionDialog, setOpenNewContributionDialog] = useState(false);
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
   
-  const { data: contributions = [], isLoading: isContributionsLoading } = useQuery<Contribution[]>({
+  const { data: contributions = [], isLoading: isContributionsLoading } = useQuery<EnrichedContribution[]>({
     queryKey: [`/api/chamas/${chamaId}/contributions`],
-    queryFn: () => getChamaContributions(chamaId),
+    queryFn: async () => {
+      const response = await getChamaContributions(chamaId);
+      return response || [];
+    },
     enabled: !isNaN(chamaId)
   });
 
-  const { data: members = [], isLoading: isMembersLoading } = useQuery<ChamaMember[]>({
+  const { data: members = [], isLoading: isMembersLoading } = useQuery<ChamaMemberWithUser[]>({
     queryKey: [`/api/chamas/${chamaId}/members`],
-    queryFn: () => getChamaMembers(chamaId),
+    queryFn: async () => {
+      const response = await getChamaMembers(chamaId);
+      return response;
+    },
     enabled: !isNaN(chamaId)
   });
+
+  // Create a map of userId to member info for faster lookups
+  const memberMap = new Map(members.map(member => [member.userId, member]));
 
   // Get chama wallet
-  const { data: chamaWallet } = useQuery({
+  const { data: chamaWallet } = useQuery<Wallet>({
     queryKey: [`/api/chamas/${chamaId}/wallet`],
     queryFn: () => getChamaWallet(chamaId),
     enabled: !isNaN(chamaId)
   });
 
+  // Format wallet balance
+  const formattedBalance = chamaWallet ? 
+    `${chamaWallet.currency} ${chamaWallet.balance.toLocaleString()}` : 
+    "Loading...";
+
+  const lastUpdate = chamaWallet ? 
+    new Date(chamaWallet.lastUpdated).toLocaleString() : 
+    "Loading...";
+
   // Form for adding new contribution
   const form = useForm<ContributionFormValues>({
     resolver: zodResolver(contributionSchema),
     defaultValues: {
-      memberId: "",
       amount: "",
-      dueDate: new Date().toISOString().split('T')[0],
     },
   });
 
-  // Mutation for creating a new contribution
-  const createContributionMutation = useMutation({
-    mutationFn: async (data: ContributionFormValues) => {
-      return createContribution(
-        chamaId,
-        parseInt(data.memberId),
-        parseFloat(data.amount),
-        new Date(data.dueDate)
-      );
-    },
+  // Pay contribution mutation
+  const payContributionMutation = useMutation<ContributionPaymentResponse, Error, number>({
+    mutationFn: payContribution,
     onSuccess: () => {
+      // Invalidate and refetch contributions
       queryClient.invalidateQueries({ queryKey: [`/api/chamas/${chamaId}/contributions`] });
-      toast({
-        title: "Contribution created",
-        description: "The contribution has been successfully created.",
-      });
-      setOpenNewContributionDialog(false);
-      form.reset();
-    },
-    onError: (error) => {
-      toast({
-        title: "Failed to create contribution",
-        description: error.message,
-        variant: "destructive",
-      });
-    },
-  });
-
-  // Mutation for paying a contribution with wallet transfer
-  const payContributionMutation = useMutation({
-    mutationFn: async ({ contributionId, amount }: { contributionId: number; amount: number }) => {
-      setIsProcessingPayment(true);
-      try {
-        // First transfer the money to the chama
-        await transferToChama(chamaId, amount, `Payment for contribution #${contributionId}`);
-        
-        // Then mark the contribution as paid
-        return await payContribution(contributionId);
-      } finally {
-        setIsProcessingPayment(false);
-      }
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/chamas/${chamaId}/contributions`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/wallets/user`] });
       queryClient.invalidateQueries({ queryKey: [`/api/chamas/${chamaId}/wallet`] });
+      
       toast({
         title: "Payment successful",
-        description: "The contribution has been marked as paid and the amount has been transferred to the chama.",
+        description: "Your contribution has been paid successfully.",
       });
     },
     onError: (error) => {
       toast({
         title: "Payment failed",
-        description: error.message,
+        description: error instanceof Error ? error.message : "Failed to process payment",
         variant: "destructive",
       });
-    },
+    }
   });
 
-  const onNewContributionSubmit = (data: ContributionFormValues) => {
-    createContributionMutation.mutate(data);
+  const handlePayContribution = async (contributionId: number) => {
+    try {
+      setIsProcessingPayment(true);
+      await payContributionMutation.mutateAsync(contributionId);
+    } finally {
+      setIsProcessingPayment(false);
+    }
   };
 
   // Filter contributions based on search query and status filter
-  const filteredContributions = contributions.filter(contribution => {
-    // In a real app, we would have member information readily available
-    // Here we're using placeholder data
-    const memberName = members.find((m: any) => m.userId === contribution.userId)?.user?.fullName || "Member";
+  const filteredContributions = contributions.filter((contribution: EnrichedContribution) => {
+    const memberInfo = memberMap.get(contribution.userId);
+    const memberName = memberInfo?.user?.fullName || "Unknown Member";
+    const memberEmail = memberInfo?.user?.email || "";
     
     const matchesSearch = 
       memberName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      memberEmail.toLowerCase().includes(searchQuery.toLowerCase()) ||
       contribution.amount.toString().includes(searchQuery);
     
     const matchesStatus = 
@@ -166,21 +177,26 @@ export default function ChamaContributions() {
     return matchesSearch && matchesStatus;
   });
 
+  // Sort contributions by date (most recent first)
+  const sortedContributions = [...filteredContributions].sort((a, b) => 
+    new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+  );
+
   // Calculate contribution statistics
   const totalContributions = contributions.length;
-  const paidContributions = contributions.filter(c => c.status === "paid").length;
-  const pendingContributions = contributions.filter(c => c.status === "pending").length;
-  const overdueContributions = contributions.filter(c => c.status === "overdue").length;
+  const paidContributions = contributions.filter((c: EnrichedContribution) => c.status === "paid").length;
+  const pendingContributions = contributions.filter((c: EnrichedContribution) => c.status === "pending").length;
+  const overdueContributions = contributions.filter((c: EnrichedContribution) => c.status === "overdue").length;
   
-  const totalAmount = contributions.reduce((sum, c) => sum + parseFloat(c.amount.toString()), 0);
+  const totalAmount = contributions.reduce((sum, c: EnrichedContribution) => sum + parseFloat(c.amount.toString()), 0);
   const paidAmount = contributions
-    .filter(c => c.status === "paid")
+    .filter((c: EnrichedContribution) => c.status === "paid")
     .reduce((sum, c) => sum + parseFloat(c.amount.toString()), 0);
   const pendingAmount = contributions
-    .filter(c => c.status === "pending")
+    .filter((c: EnrichedContribution) => c.status === "pending")
     .reduce((sum, c) => sum + parseFloat(c.amount.toString()), 0);
   const overdueAmount = contributions
-    .filter(c => c.status === "overdue")
+    .filter((c: EnrichedContribution) => c.status === "overdue")
     .reduce((sum, c) => sum + parseFloat(c.amount.toString()), 0);
 
   const getInitials = (name: string) => {
@@ -202,385 +218,288 @@ export default function ChamaContributions() {
       case "overdue":
         return "bg-destructive text-destructive-foreground";
       default:
-        return "bg-secondary text-secondary-foreground";
+        return "bg-muted text-muted-foreground";
     }
   };
 
-  // Handle contribution payment
-  const handlePayContribution = async (contribution: Contribution) => {
-    if (!contribution) return;
-    
-    try {
-      await payContributionMutation.mutateAsync({
-        contributionId: contribution.id,
-        amount: parseFloat(contribution.amount.toString())
+  // Format contribution date
+  const formatContributionDate = (date: Date | string) => {
+    return new Date(date).toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric'
+    });
+  };
+
+  // Update the mutation type for createContributionMutation
+  const createContributionMutation = useMutation<ContributionPaymentResponse, Error, ContributionFormValues, MutationContext>({
+    mutationFn: async (data: ContributionFormValues) => {
+      setIsProcessingPayment(true);
+      try {
+        // Create contribution
+        const contribution = await createContribution(
+          chamaId,
+          parseFloat(data.amount)
+        );
+        
+        // Immediately pay the contribution
+        const result = await payContribution(contribution.id);
+        return result;
+      } finally {
+        setIsProcessingPayment(false);
+      }
+    },
+    onMutate: async (newContribution) => {
+      // Cancel any outgoing refetches
+      await queryClient.cancelQueries({ queryKey: [`/api/chamas/${chamaId}/contributions`] });
+
+      // Snapshot the previous value
+      const previousContributions = queryClient.getQueryData<ContributionsResponse>([`/api/chamas/${chamaId}/contributions`]);
+
+      // Optimistically update to the new value
+      if (previousContributions) {
+        queryClient.setQueryData<ContributionsResponse>([`/api/chamas/${chamaId}/contributions`], old => {
+          const optimisticContribution: EnrichedContribution = {
+            id: Math.random(), // temporary ID
+            chamaId,
+            userId: (window as any).userId, // assuming you have the user ID available
+            amount: parseFloat(newContribution.amount),
+            status: "pending",
+            dueDate: new Date(),
+            paidAt: null,
+            createdAt: new Date(),
+            member: null // will be populated on server response
+          };
+          return {
+            contributions: [...(old?.contributions || []), optimisticContribution]
+          };
+        });
+      }
+
+      return { previousContributions };
+    },
+    onError: (err, newContribution, context) => {
+      // If the mutation fails, use the context returned from onMutate to roll back
+      if (context?.previousContributions) {
+        queryClient.setQueryData([`/api/chamas/${chamaId}/contributions`], context.previousContributions);
+      }
+      
+      toast({
+        title: "Failed to process contribution",
+        description: err instanceof Error ? err.message : "Failed to process contribution",
+        variant: "destructive",
       });
-    } catch (error) {
-      console.error('Error paying contribution:', error);
+    },
+    onSettled: () => {
+      // Always refetch after error or success to ensure we have the correct data
+      queryClient.invalidateQueries({ queryKey: [`/api/chamas/${chamaId}/contributions`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/wallets/user`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/chamas/${chamaId}/wallet`] });
+      
+      setOpenNewContributionDialog(false);
+      form.reset();
     }
+  });
+
+  const onNewContributionSubmit = (data: ContributionFormValues) => {
+    createContributionMutation.mutate(data);
   };
 
   return (
     <ChamaLayout>
-      <div className="mb-6">
-        <div className="flex flex-col md:flex-row justify-between md:items-center gap-4">
-          <div>
-            <h2 className="text-xl font-semibold">Contributions</h2>
-            <p className="text-muted-foreground">
-              Manage and track chama contributions
-            </p>
-          </div>
-          
-          <div className="flex gap-2">
-            <Dialog open={openNewContributionDialog} onOpenChange={setOpenNewContributionDialog}>
-              <DialogTrigger asChild>
-                <Button>
-                  <Plus className="h-4 w-4 mr-2" />
+      <div className="space-y-6">
+        {/* Stats Cards */}
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Total Contributions</CardTitle>
+              <DollarSign className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{totalContributions}</div>
+              <p className="text-xs text-muted-foreground">
+                {formatCurrency(totalAmount)}
+              </p>
+          </CardContent>
+        </Card>
+        <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Paid</CardTitle>
+              <CheckCircle className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{paidContributions}</div>
+              <p className="text-xs text-muted-foreground">
+                {formatCurrency(paidAmount)}
+              </p>
+          </CardContent>
+        </Card>
+        <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Pending</CardTitle>
+              <Clock className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{pendingContributions}</div>
+              <p className="text-xs text-muted-foreground">
+                {formatCurrency(pendingAmount)}
+              </p>
+          </CardContent>
+        </Card>
+        <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Overdue</CardTitle>
+              <AlertCircle className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{overdueContributions}</div>
+              <p className="text-xs text-muted-foreground">
+                {formatCurrency(overdueAmount)}
+              </p>
+          </CardContent>
+        </Card>
+      </div>
+      
+        {/* Contributions List */}
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle>Contributions</CardTitle>
+              <div className="flex items-center space-x-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="hidden md:flex"
+                  onClick={() => setOpenNewContributionDialog(true)}
+                >
+                  <Plus className="mr-2 h-4 w-4" />
                   New Contribution
                 </Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Create New Contribution</DialogTitle>
-                  <DialogDescription>
-                    Add a new contribution for a member.
-                  </DialogDescription>
-                </DialogHeader>
-                
-                <Form {...form}>
-                  <form onSubmit={form.handleSubmit(onNewContributionSubmit)} className="space-y-4">
-                    <FormField
-                      control={form.control}
-                      name="memberId"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Member</FormLabel>
-                          <Select onValueChange={field.onChange} value={field.value}>
-                            <FormControl>
-                              <SelectTrigger>
-                                <SelectValue placeholder="Select a member" />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                              {members.map((member) => (
-                                <SelectItem 
-                                  key={member.userId} 
-                                  value={member.userId.toString()}
-                                >
-                                  Member {member.userId}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    
-                    <FormField
-                      control={form.control}
-                      name="amount"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Amount (KES)</FormLabel>
-                          <FormControl>
-                            <Input {...field} type="number" min="1" step="0.01" />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    
-                    <FormField
-                      control={form.control}
-                      name="dueDate"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Due Date</FormLabel>
-                          <FormControl>
-                            <Input {...field} type="date" />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    
-                    <DialogFooter>
-                      <Button 
-                        type="button" 
-                        variant="outline" 
-                        onClick={() => setOpenNewContributionDialog(false)}
-                      >
-                        Cancel
-                      </Button>
-                      <Button 
-                        type="submit"
-                        disabled={createContributionMutation.isPending}
-                      >
-                        {createContributionMutation.isPending ? (
-                          <>
-                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            Creating...
-                          </>
-                        ) : (
-                          <>
-                            <DollarSign className="mr-2 h-4 w-4" />
-                            Create Contribution
-                          </>
-                        )}
-                      </Button>
-                    </DialogFooter>
-                  </form>
-                </Form>
-              </DialogContent>
-            </Dialog>
-            
-            <Button variant="outline">
-              <Download className="h-4 w-4 mr-2" />
-              Export
-            </Button>
-          </div>
-        </div>
-      </div>
-      
-      {/* Contribution Statistics */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-sm font-medium text-muted-foreground">Total Contributions</h3>
-              <DollarSign className="h-5 w-5 text-primary" />
-            </div>
-            <p className="text-2xl font-bold">KES {totalAmount.toLocaleString()}</p>
-            <p className="text-xs text-muted-foreground">{totalContributions} contributions</p>
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-sm font-medium text-muted-foreground">Paid</h3>
-              <CheckCircle className="h-5 w-5 text-success" />
-            </div>
-            <p className="text-2xl font-bold text-success">KES {paidAmount.toLocaleString()}</p>
-            <p className="text-xs text-muted-foreground">{paidContributions} contributions</p>
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-sm font-medium text-muted-foreground">Pending</h3>
-              <Clock className="h-5 w-5 text-warning" />
-            </div>
-            <p className="text-2xl font-bold text-warning">KES {pendingAmount.toLocaleString()}</p>
-            <p className="text-xs text-muted-foreground">{pendingContributions} contributions</p>
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-sm font-medium text-muted-foreground">Overdue</h3>
-              <AlertCircle className="h-5 w-5 text-destructive" />
-            </div>
-            <p className="text-2xl font-bold text-destructive">KES {overdueAmount.toLocaleString()}</p>
-            <p className="text-xs text-muted-foreground">{overdueContributions} contributions</p>
-          </CardContent>
-        </Card>
-      </div>
-      
-      {/* Add wallet balance display */}
-      {chamaWallet && (
-        <Card className="mb-6">
-          <CardContent className="p-6">
-            <div className="flex justify-between items-center">
-              <div>
-                <h3 className="text-lg font-semibold">Chama Wallet</h3>
-                <p className="text-2xl font-bold">
-                  {formatCurrency(parseFloat(chamaWallet.balance.toString()), chamaWallet.currency)}
-                </p>
-              </div>
-              <div className="text-right">
-                <p className="text-sm text-muted-foreground">Total Balance</p>
-                <p className="text-sm text-muted-foreground">
-                  Last updated: {new Date(chamaWallet.updatedAt).toLocaleDateString()}
-                </p>
               </div>
             </div>
-          </CardContent>
-        </Card>
-      )}
-      
-      {/* Contribution Listing */}
-      <Card>
-        <CardHeader className="pb-3">
-          <div className="flex flex-col md:flex-row justify-between md:items-end gap-4">
-            <div>
-              <CardTitle>Contribution History</CardTitle>
-              <CardDescription>
-                All contributions for this chama
-              </CardDescription>
-            </div>
-            
-            <div className="flex gap-2">
-              <div className="relative w-full md:w-60">
-                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <div className="flex items-center space-x-2">
+              <div className="flex-1">
                 <Input
-                  type="search"
                   placeholder="Search contributions..."
-                  className="pl-9"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
+                  className="max-w-sm"
                 />
               </div>
-              
               <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-[130px]">
-                  <div className="flex items-center">
-                    <Filter className="h-4 w-4 mr-2" />
-                    <span>Status</span>
-                  </div>
+                <SelectTrigger className="w-[180px]">
+                  <SelectValue placeholder="Filter by status" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Status</SelectItem>
+                  <SelectItem value="all">All</SelectItem>
                   <SelectItem value="paid">Paid</SelectItem>
                   <SelectItem value="pending">Pending</SelectItem>
                   <SelectItem value="overdue">Overdue</SelectItem>
                 </SelectContent>
               </Select>
-            </div>
           </div>
         </CardHeader>
-        
         <CardContent>
-          {isContributionsLoading || isMembersLoading ? (
-            <div className="flex justify-center items-center h-64">
-              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-            </div>
-          ) : filteredContributions.length === 0 ? (
-            <div className="text-center py-8">
-              <DollarSign className="h-12 w-12 mx-auto text-muted-foreground mb-3" />
-              <h3 className="text-lg font-medium mb-2">No Contributions Found</h3>
-              <p className="text-muted-foreground mb-4">
-                {searchQuery || statusFilter !== "all" ? 
-                  "No contributions match your search criteria." : 
-                  "There are no contributions recorded yet."}
-              </p>
-              {searchQuery || statusFilter !== "all" ? (
-                <Button 
-                  variant="outline" 
-                  onClick={() => {
-                    setSearchQuery("");
-                    setStatusFilter("all");
-                  }}
+            <div className="space-y-4">
+              {sortedContributions.map((contribution) => (
+                <div
+                  key={contribution.id}
+                  className="flex items-center justify-between p-4 border rounded-lg"
                 >
-                  Clear Filters
-                </Button>
-              ) : (
-                <Button onClick={() => setOpenNewContributionDialog(true)}>
-                  <Plus className="h-4 w-4 mr-2" />
-                  Create First Contribution
-                </Button>
-              )}
-            </div>
-          ) : (
-            <div className="rounded-md border">
-              <div className="grid grid-cols-12 p-3 bg-muted text-xs font-medium">
-                <div className="col-span-5 md:col-span-3">Member</div>
-                <div className="col-span-3 md:col-span-2 text-center">Amount</div>
-                <div className="col-span-4 md:col-span-2 text-center">Due Date</div>
-                <div className="hidden md:block md:col-span-2 text-center">Payment Date</div>
-                <div className="col-span-3 text-center">Status</div>
-                <div className="hidden md:block md:col-span-1"></div>
-              </div>
-              
-              {filteredContributions.map((contribution) => {
-                // Find member details
-                const member = members.find(m => m.userId === contribution.userId);
-                const memberName = member ? `Member ${member.userId}` : "Unknown Member";
-                
-                return (
-                  <div key={contribution.id} className="grid grid-cols-12 p-3 border-t hover:bg-muted/50">
-                    <div className="col-span-5 md:col-span-3 flex items-center">
-                      <Avatar className="h-8 w-8 mr-2 hidden md:block">
-                        <AvatarFallback>{getInitials(memberName)}</AvatarFallback>
+                  <div className="flex items-center space-x-4">
+                    <Avatar>
+                      <AvatarImage src={contribution.member?.profilePic} />
+                      <AvatarFallback>
+                        {contribution.member?.fullName
+                          ? getInitials(contribution.member.fullName)
+                          : "?"}
+                      </AvatarFallback>
                       </Avatar>
-                      <p className="text-sm truncate">{memberName}</p>
-                    </div>
-                    
-                    <div className="col-span-3 md:col-span-2 flex justify-center items-center">
-                      <p className="text-sm font-medium">KES {parseFloat(contribution.amount.toString()).toLocaleString()}</p>
-                    </div>
-                    
-                    <div className="col-span-4 md:col-span-2 flex justify-center items-center">
-                      <p className="text-sm">
-                        {new Date(contribution.dueDate).toLocaleDateString()}
+                    <div>
+                      <p className="text-sm font-medium">
+                        {contribution.member?.fullName || "Unknown Member"}
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        {formatContributionDate(contribution.createdAt)}
                       </p>
                     </div>
-                    
-                    <div className="hidden md:flex md:col-span-2 justify-center items-center">
-                      <p className="text-sm">
-                        {contribution.paidAt 
-                          ? new Date(contribution.paidAt).toLocaleDateString() 
-                          : "-"}
+                  </div>
+                  <div className="flex items-center space-x-4">
+                    <div className="text-right">
+                      <p className="text-sm font-medium">
+                        {formatCurrency(contribution.amount)}
                       </p>
-                    </div>
-                    
-                    <div className="col-span-3 flex justify-center items-center">
                       <Badge className={getStatusBadgeStyles(contribution.status)}>
-                        {contribution.status.charAt(0).toUpperCase() + contribution.status.slice(1)}
+                        {contribution.status}
                       </Badge>
                     </div>
-                    
-                    <div className="hidden md:flex md:col-span-1 justify-end items-center">
-                      {contribution.status === "pending" || contribution.status === "overdue" ? (
+                    {contribution.status === "pending" && (
                         <Button 
-                          variant="ghost" 
+                        variant="outline"
                           size="sm"
-                          onClick={() => handlePayContribution(contribution)}
-                          disabled={isProcessingPayment || contribution.status === "paid"}
+                        onClick={() => handlePayContribution(contribution.id)}
+                        disabled={isProcessingPayment}
                         >
                           {isProcessingPayment ? (
                             <Loader2 className="h-4 w-4 animate-spin" />
-                          ) : contribution.status === "paid" ? (
-                            <>
-                              <CheckCircle className="mr-2 h-4 w-4" />
-                              Paid
-                            </>
                           ) : (
-                            <>
                               <CreditCard className="h-4 w-4" />
-                              Pay Now
-                            </>
                           )}
+                        <span className="ml-2">Pay</span>
                         </Button>
-                      ) : null}
-                    </div>
+                    )}
                   </div>
-                );
-              })}
+                </div>
+              ))}
             </div>
-          )}
         </CardContent>
-        
-        <CardFooter className="flex justify-between border-t pt-5">
-          <div className="text-sm text-muted-foreground">
-            Showing {filteredContributions.length} of {totalContributions} contributions
-          </div>
-          
-          <div className="flex gap-2">
-            <Button variant="outline" size="sm" className="hidden md:flex">
-              <BarChart4 className="h-4 w-4 mr-2" />
-              View Analytics
+        </Card>
+
+        {/* New Contribution Dialog */}
+        <Dialog open={openNewContributionDialog} onOpenChange={setOpenNewContributionDialog}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>New Contribution</DialogTitle>
+              <DialogDescription>
+                Add a new contribution to the chama. This will be marked as pending until paid.
+              </DialogDescription>
+            </DialogHeader>
+            <Form {...form}>
+              <form onSubmit={form.handleSubmit(onNewContributionSubmit)} className="space-y-4">
+                <FormField
+                  control={form.control}
+                  name="amount"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Amount</FormLabel>
+                      <FormControl>
+                        <Input
+                          {...field}
+                          type="number"
+                          placeholder="Enter amount"
+                          disabled={createContributionMutation.isPending}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <DialogFooter>
+                  <Button
+                    type="submit"
+                    disabled={createContributionMutation.isPending}
+                  >
+                    {createContributionMutation.isPending ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : null}
+                    Create Contribution
             </Button>
-            <Button variant="outline" size="sm">
-              <Download className="h-4 w-4 mr-2" />
-              Export CSV
-            </Button>
+                </DialogFooter>
+              </form>
+            </Form>
+          </DialogContent>
+        </Dialog>
           </div>
-        </CardFooter>
-      </Card>
     </ChamaLayout>
   );
 }

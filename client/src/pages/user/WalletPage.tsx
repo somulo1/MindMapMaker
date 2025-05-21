@@ -173,8 +173,9 @@ const WalletPage: React.FC = () => {
 
                         <TabsContent value="incoming">
                             <TransactionHistoryList
-                                transactions={transactions.filter(t =>
-                                    t.type === 'deposit' || (t.type === 'transfer' && t.amount > 0)
+                                transactions={transactions.filter(t => 
+                                    t.type === 'deposit' || 
+                                    (t.type === 'transfer' && t.destinationWallet === wallet?.id && t.sourceWallet !== wallet?.id)
                                 )}
                             />
                         </TabsContent>
@@ -182,8 +183,9 @@ const WalletPage: React.FC = () => {
                         <TabsContent value="outgoing">
                             <TransactionHistoryList
                                 transactions={transactions.filter(t =>
-                                    t.type === 'withdrawal' || t.type === 'contribution' ||
-                                    (t.type === 'transfer' && t.amount < 0)
+                                    t.type === 'withdrawal' || 
+                                    t.type === 'contribution' ||
+                                    (t.type === 'transfer' && t.sourceWallet === wallet?.id && t.destinationWallet !== wallet?.id)
                                 )}
                             />
                         </TabsContent>

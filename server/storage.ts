@@ -8,11 +8,17 @@ import {
   learningResources, type LearningResource, type InsertLearningResource,
   marketplaceItems, type MarketplaceItem, type InsertMarketplaceItem,
   aiConversations, type AiConversation, type InsertAiConversation,
-  wishlistItems, type WishlistItem, type InsertWishlistItem,
-  carts, type CartItem, type InsertCartItem,
-  orders, type Order, type InsertOrder,
-  orderItems, type OrderItem, type InsertOrderItem
+  wishlistItems, type WishlistItem,
+  notifications,
+  chamaInvitations, type ChamaInvitation, type InsertChamaInvitation,
+  cartItems, type CartItem,
+  orders, type Order,
+  orderItems, type OrderItem,
+  contributions, type Contribution, type InsertContribution,
+  meetings, type Meeting, type InsertMeeting
 } from "@shared/schema";
+import { eq, desc, and } from "drizzle-orm";
+import { db } from "./drizzle";
 
 // Define storage interface
 export interface IStorage {
@@ -80,24 +86,21 @@ export interface IStorage {
   addToWishlist(userId: number, itemId: number): Promise<WishlistItem>;
   removeFromWishlist(userId: number, itemId: number): Promise<void>;
 
-  // Cart operations
-  getCartItem(userId: number, itemId: number): Promise<CartItem | undefined>;
-  getUserCart(userId: number): Promise<CartItem[]>;
-  addToCart(userId: number, itemId: number, quantity: number): Promise<CartItem>;
-  updateCartItem(userId: number, itemId: number, data: Partial<CartItem>): Promise<CartItem | undefined>;
-  removeFromCart(userId: number, itemId: number): Promise<void>;
-  clearUserCart(userId: number): Promise<void>;
-
-  // Order operations
-  createOrder(userId: number, totalAmount: number, items: { itemId: number; quantity: number; price: number }[]): Promise<Order>;
-  getOrder(id: number): Promise<Order | undefined>;
-  getUserOrders(userId: number): Promise<Order[]>;
-  getOrderItems(orderId: number): Promise<OrderItem[]>;
-
   // Admin methods
   getAllUsers(): Promise<User[]>;
   deleteUser(id: number): Promise<void>;
   getChamaMembershipsByUserId(userId: number): Promise<ChamaMember[]>;
+
+  // Contribution methods
+  getContribution(id: number): Promise<Contribution | undefined>;
+  getChamaContributions(chamaId: number): Promise<Contribution[]>;
+  createContribution(contribution: InsertContribution): Promise<Contribution>;
+  updateContribution(id: number, data: Partial<Contribution>): Promise<Contribution | undefined>;
+
+  // Meeting methods
+  getChamaMeetings(chamaId: number): Promise<Meeting[]>;
+  createMeeting(data: InsertMeeting): Promise<Meeting>;
+  updateMeeting(id: number, data: Partial<Meeting>): Promise<Meeting>;
 }
 
 export class MemStorage implements IStorage {
@@ -114,6 +117,8 @@ export class MemStorage implements IStorage {
   private cartItems: Map<number, CartItem>;
   private orders: Map<number, Order>;
   private orderItems: Map<number, OrderItem>;
+  private contributions: Map<number, Contribution>;
+  private meetings: Map<number, Meeting> = new Map();
   
   private userIdCounter: number;
   private chamaIdCounter: number;
@@ -128,6 +133,8 @@ export class MemStorage implements IStorage {
   private cartItemIdCounter: number = 1;
   private orderIdCounter: number = 1;
   private orderItemIdCounter: number = 1;
+  private contributionIdCounter: number = 1;
+  private meetingIdCounter = 1;
 
   constructor() {
     this.users = new Map();
@@ -143,6 +150,7 @@ export class MemStorage implements IStorage {
     this.cartItems = new Map();
     this.orders = new Map();
     this.orderItems = new Map();
+    this.contributions = new Map();
     
     this.userIdCounter = 1;
     this.chamaIdCounter = 1;
@@ -277,7 +285,11 @@ export class MemStorage implements IStorage {
       memberCount: 1,
       balance: 0,
       establishedDate: now,
-      createdAt: now
+      createdAt: now,
+      description: insertChama.description || null,
+      icon: insertChama.icon || null,
+      iconBg: insertChama.iconBg || null,
+      nextMeeting: null
     };
     this.chamas.set(id, chama);
     
@@ -307,22 +319,50 @@ export class MemStorage implements IStorage {
   // Chama members
   async getChamaMember(chamaId: number, userId: number): Promise<ChamaMember | undefined> {
     return Array.from(this.chamaMembers.values())
-      .find(member => member.chamaId === chamaId && member.userId === userId);
+      .find(member => member.chamaId === chamaId && member.userId === userId && member.isActive === true);
   }
 
   async getChamaMembers(chamaId: number): Promise<ChamaMember[]> {
     return Array.from(this.chamaMembers.values())
-      .filter(member => member.chamaId === chamaId);
+      .filter(member => member.chamaId === chamaId && member.isActive === true);
   }
 
   async addChamaMember(insertMember: InsertChamaMember): Promise<ChamaMember> {
+    // Check if user is already a member
+    const existingMember = await this.getChamaMember(insertMember.chamaId, insertMember.userId);
+    
+    if (existingMember) {
+      // If member exists but is inactive, reactivate them
+      if (!existingMember.isActive) {
+        const updatedMember = await this.updateChamaMember(existingMember.id, {
+          isActive: true,
+          role: insertMember.role || existingMember.role
+        });
+        
+        // Update chama member count
+        const chama = await this.getChama(insertMember.chamaId);
+        if (chama) {
+          await this.updateChama(chama.id, { memberCount: chama.memberCount + 1 });
+        }
+        
+        return updatedMember!;
+      }
+      // If member is already active, return existing member
+      return existingMember;
+    }
+    
+    // If no existing member, create new one
     const id = this.chamaMemberIdCounter++;
     const now = new Date();
     const member: ChamaMember = {
       ...insertMember,
       id,
+      role: insertMember.role || "member",
       rating: 5,
-      joinedAt: now
+      joinedAt: now,
+      contributionAmount: null,
+      contributionFrequency: null,
+      isActive: insertMember.isActive ?? true
     };
     this.chamaMembers.set(id, member);
     
@@ -362,7 +402,10 @@ export class MemStorage implements IStorage {
       ...insertWallet,
       id,
       balance: 0,
-      lastUpdated: now
+      lastUpdated: now,
+      userId: insertWallet.userId || null,
+      chamaId: insertWallet.chamaId || null,
+      currency: insertWallet.currency || "KES"
     };
     this.wallets.set(id, wallet);
     return wallet;
@@ -404,7 +447,13 @@ export class MemStorage implements IStorage {
     const transaction: Transaction = {
       ...insertTransaction,
       id,
-      createdAt: now
+      createdAt: now,
+      userId: insertTransaction.userId || null,
+      chamaId: insertTransaction.chamaId || null,
+      status: insertTransaction.status || "completed",
+      description: insertTransaction.description || null,
+      sourceWallet: insertTransaction.sourceWallet || null,
+      destinationWallet: insertTransaction.destinationWallet || null
     };
     this.transactions.set(id, transaction);
     
@@ -469,7 +518,11 @@ export class MemStorage implements IStorage {
       ...insertMessage,
       id,
       isRead: false,
-      sentAt: now
+      isSystemMessage: false,
+      sentAt: now,
+      itemId: insertMessage.itemId || null,
+      chamaId: insertMessage.chamaId || null,
+      receiverId: insertMessage.receiverId || null
     };
     this.messages.set(id, message);
     return message;
@@ -504,7 +557,11 @@ export class MemStorage implements IStorage {
     const resource: LearningResource = {
       ...insertResource,
       id,
-      createdAt: now
+      createdAt: now,
+      description: insertResource.description || null,
+      content: insertResource.content || null,
+      imageUrl: insertResource.imageUrl || null,
+      duration: insertResource.duration || null
     };
     this.learningResources.set(id, resource);
     return resource;
@@ -537,7 +594,15 @@ export class MemStorage implements IStorage {
       ...insertItem,
       id,
       isActive: true,
-      createdAt: now
+      createdAt: now,
+      location: insertItem.location || null,
+      description: insertItem.description || null,
+      chamaId: insertItem.chamaId || null,
+      imageUrl: insertItem.imageUrl || null,
+      category: insertItem.category || null,
+      condition: insertItem.condition || null,
+      currency: insertItem.currency || "KES",
+      quantity: insertItem.quantity || 1
     };
     this.marketplaceItems.set(id, item);
     return item;
@@ -722,6 +787,48 @@ export class MemStorage implements IStorage {
     return Array.from(this.users.values());
   }
 
+  // Helper method to clean up duplicate members
+  async cleanupDuplicateMembers(chamaId: number): Promise<void> {
+    const members = Array.from(this.chamaMembers.values())
+      .filter(member => member.chamaId === chamaId);
+    
+    // Group members by userId
+    const membersByUser = new Map<number, ChamaMember[]>();
+    members.forEach(member => {
+      const existing = membersByUser.get(member.userId) || [];
+      membersByUser.set(member.userId, [...existing, member]);
+    });
+    
+    // Keep only the most recent active member for each user
+    membersByUser.forEach((userMembers: ChamaMember[], userId: number) => {
+      if (userMembers.length > 1) {
+        // Sort by joinedAt date, most recent first
+        userMembers.sort((a: ChamaMember, b: ChamaMember) => 
+          b.joinedAt.getTime() - a.joinedAt.getTime()
+        );
+        
+        // Keep the first one (most recent) active, remove others
+        const [keepMember, ...duplicates] = userMembers;
+        keepMember.isActive = true;
+        
+        // Remove duplicate entries
+        duplicates.forEach((duplicate: ChamaMember) => {
+          this.chamaMembers.delete(duplicate.id);
+        });
+      }
+    });
+    
+    // Update the chama member count
+    const activeMembers = Array.from(this.chamaMembers.values())
+      .filter(member => member.chamaId === chamaId && member.isActive)
+      .length;
+    
+    const chama = await this.getChama(chamaId);
+    if (chama) {
+      await this.updateChama(chama.id, { memberCount: activeMembers });
+    }
+  }
+
   async deleteUser(id: number): Promise<void> {
     // Delete user
     this.users.delete(id);
@@ -779,6 +886,180 @@ export class MemStorage implements IStorage {
     return Array.from(this.chamaMembers.values())
       .filter(member => member.userId === userId);
   }
+
+  // Contribution methods
+  async getContribution(id: number): Promise<Contribution | undefined> {
+    return this.contributions.get(id);
+  }
+
+  async getChamaContributions(chamaId: number): Promise<Contribution[]> {
+    return Array.from(this.contributions.values())
+      .filter(contribution => contribution.chamaId === chamaId)
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  }
+
+  async createContribution(insertContribution: InsertContribution): Promise<Contribution> {
+    const id = this.contributionIdCounter++;
+    const now = new Date();
+    const contribution: Contribution = {
+      ...insertContribution,
+      id,
+      status: insertContribution.status || "pending",
+      createdAt: now,
+      paidAt: null
+    };
+    this.contributions.set(id, contribution);
+    return contribution;
+  }
+
+  async updateContribution(id: number, data: Partial<Contribution>): Promise<Contribution | undefined> {
+    const contribution = this.contributions.get(id);
+    if (!contribution) return undefined;
+    
+    const updatedContribution: Contribution = {
+      ...contribution,
+      ...data
+    };
+    this.contributions.set(id, updatedContribution);
+    return updatedContribution;
+  }
+
+  // Meeting methods
+  async getChamaMeetings(chamaId: number): Promise<Meeting[]> {
+    return Array.from(this.meetings.values())
+      .filter(meeting => meeting.chamaId === chamaId)
+      .sort((a, b) => new Date(b.scheduledFor).getTime() - new Date(a.scheduledFor).getTime());
+  }
+
+  async createMeeting(data: InsertMeeting): Promise<Meeting> {
+    const meeting: Meeting = {
+      id: this.meetingIdCounter++,
+      chamaId: data.chamaId,
+      title: data.title,
+      description: data.description ?? null,
+      scheduledFor: data.scheduledFor,
+      location: data.location ?? null,
+      agenda: data.agenda ?? null,
+      status: data.status ?? "upcoming",
+      minutes: data.minutes ?? null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    this.meetings.set(meeting.id, meeting);
+    return meeting;
+  }
+
+  async updateMeeting(id: number, data: Partial<Meeting>): Promise<Meeting> {
+    const meeting = this.meetings.get(id);
+    if (!meeting) {
+      throw new Error("Meeting not found");
+    }
+
+    const updatedMeeting = {
+      ...meeting,
+      ...data,
+      updatedAt: new Date().toISOString()
+    };
+
+    this.meetings.set(id, updatedMeeting);
+    return updatedMeeting;
+  }
 }
 
 export const storage = new MemStorage();
+
+// Chama invitation functions
+export async function createChamaInvitation(data: any) {
+  const result = await db.insert(chamaInvitations).values(data).returning();
+  return result[0];
+}
+
+export async function getChamaInvitation(chamaId: number, userId: number) {
+  const result = await db
+    .select()
+    .from(chamaInvitations)
+    .where(and(
+      eq(chamaInvitations.chamaId, chamaId),
+      eq(chamaInvitations.invitedUserId, userId)
+    ))
+    .orderBy(desc(chamaInvitations.invitedAt))
+    .limit(1);
+  return result[0];
+}
+
+export async function getChamaInvitationById(invitationId: number) {
+  const result = await db
+    .select()
+    .from(chamaInvitations)
+    .where(eq(chamaInvitations.id, invitationId))
+    .limit(1);
+  return result[0];
+}
+
+export async function updateChamaInvitation(invitationId: number, data: any) {
+  const result = await db
+    .update(chamaInvitations)
+    .set(data)
+    .where(eq(chamaInvitations.id, invitationId))
+    .returning();
+  return result[0];
+}
+
+export async function getChamaInvitations(chamaId: number) {
+  const invitedUsers = users;
+  const invitedByUsers = users;
+  
+  return db
+    .select({
+      id: chamaInvitations.id,
+      chamaId: chamaInvitations.chamaId,
+      invitedUser: {
+        id: invitedUsers.id,
+        fullName: invitedUsers.fullName,
+        email: invitedUsers.email,
+        profilePic: invitedUsers.profilePic,
+      },
+      invitedByUser: {
+        id: invitedByUsers.id,
+        fullName: invitedByUsers.fullName,
+      },
+      role: chamaInvitations.role,
+      status: chamaInvitations.status,
+      invitedAt: chamaInvitations.invitedAt,
+      respondedAt: chamaInvitations.respondedAt,
+    })
+    .from(chamaInvitations)
+    .innerJoin(invitedUsers, eq(chamaInvitations.invitedUserId, invitedUsers.id))
+    .innerJoin(invitedByUsers, eq(chamaInvitations.invitedByUserId, invitedByUsers.id))
+    .where(eq(chamaInvitations.chamaId, chamaId))
+    .orderBy(desc(chamaInvitations.invitedAt));
+}
+
+export async function getUserChamaInvitations(userId: number) {
+  const invitedByUsers = users;
+  
+  return db
+    .select({
+      id: chamaInvitations.id,
+      chama: {
+        id: chamas.id,
+        name: chamas.name,
+        icon: chamas.icon,
+        iconBg: chamas.iconBg,
+      },
+      invitedByUser: {
+        id: invitedByUsers.id,
+        fullName: invitedByUsers.fullName,
+      },
+      role: chamaInvitations.role,
+      status: chamaInvitations.status,
+      invitedAt: chamaInvitations.invitedAt,
+      respondedAt: chamaInvitations.respondedAt,
+    })
+    .from(chamaInvitations)
+    .innerJoin(chamas, eq(chamaInvitations.chamaId, chamas.id))
+    .innerJoin(invitedByUsers, eq(chamaInvitations.invitedByUserId, invitedByUsers.id))
+    .where(eq(chamaInvitations.invitedUserId, userId))
+    .orderBy(desc(chamaInvitations.invitedAt));
+}

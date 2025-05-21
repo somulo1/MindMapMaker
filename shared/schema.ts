@@ -92,6 +92,11 @@ export type InsertChama = z.infer<typeof insertChamaSchema>;
 export type ChamaMember = typeof chamaMembers.$inferSelect;
 export type InsertChamaMember = z.infer<typeof insertChamaMemberSchema>;
 
+// Extended type for chama member with user details
+export type ChamaMemberWithUser = ChamaMember & {
+  user: Pick<User, "id" | "username" | "fullName" | "email" | "profilePic" | "location" | "phoneNumber">;
+};
+
 // Wallet model
 export const wallets = pgTable("wallets", {
   id: serial("id").primaryKey(),
@@ -272,3 +277,63 @@ export type Order = typeof orders.$inferSelect;
 export type OrderItem = typeof orderItems.$inferSelect;
 export type AiConversation = typeof aiConversations.$inferSelect;
 export type InsertAiConversation = z.infer<typeof insertAiConversationSchema>;
+
+// Chama Invitations
+export const chamaInvitations = pgTable("chama_invitations", {
+  id: serial("id").primaryKey(),
+  chamaId: integer("chama_id").notNull().references(() => chamas.id),
+  invitedUserId: integer("invited_user_id").notNull().references(() => users.id),
+  invitedByUserId: integer("invited_by_user_id").notNull().references(() => users.id),
+  role: text("role").default("member").notNull(),
+  status: text("status").default("pending").notNull(), // pending, accepted, rejected
+  invitedAt: timestamp("invited_at").defaultNow().notNull(),
+  respondedAt: timestamp("responded_at"),
+});
+
+export const insertChamaInvitationSchema = createInsertSchema(chamaInvitations).omit({
+  id: true,
+  invitedAt: true,
+  respondedAt: true,
+});
+
+export type ChamaInvitation = typeof chamaInvitations.$inferSelect;
+export type InsertChamaInvitation = z.infer<typeof insertChamaInvitationSchema>;
+
+// Contributions
+export const contributions = pgTable("contributions", {
+  id: serial("id").primaryKey(),
+  chamaId: integer("chama_id").notNull(),
+  userId: integer("user_id").notNull(),
+  amount: doublePrecision("amount").notNull(),
+  status: text("status").default("pending").notNull(), // pending, paid, overdue
+  dueDate: timestamp("due_date").notNull(),
+  paidAt: timestamp("paid_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const insertContributionSchema = createInsertSchema(contributions).omit({
+  id: true,
+  paidAt: true,
+  createdAt: true,
+});
+
+export type Contribution = typeof contributions.$inferSelect;
+export type InsertContribution = z.infer<typeof insertContributionSchema>;
+
+// Meetings
+export const meetings = pgTable("meetings", {
+  id: serial("id").primaryKey(),
+  chamaId: integer("chama_id").notNull(),
+  title: text("title").notNull(),
+  description: text("description"),
+  scheduledFor: text("scheduled_for").notNull(),
+  location: text("location"),
+  agenda: text("agenda"),
+  status: text("status").default("upcoming").notNull(), // upcoming, completed, cancelled
+  minutes: jsonb("minutes"), // { content: string, fileUrl?: string }
+  createdAt: text("created_at").default(new Date().toISOString()).notNull(),
+  updatedAt: text("updated_at").default(new Date().toISOString()).notNull(),
+});
+
+export type Meeting = typeof meetings.$inferSelect;
+export type InsertMeeting = typeof meetings.$inferInsert;

@@ -27,12 +27,15 @@ import {
   ShieldAlert,
   Calendar,
   AlertCircle,
-  Loader2
+  Loader2,
+  Users,
+  BarChart4
 } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { queryClient } from "@/lib/queryClient";
 import { getChamaMembers, addChamaMember } from "@/services/api";
 import { useToast } from "@/hooks/use-toast";
+import { ChamaMember, ChamaInvitation, User } from "@shared/schema";
 
 // Form schema for adding a new member
 const addMemberSchema = z.object({
@@ -42,20 +45,78 @@ const addMemberSchema = z.object({
 
 type AddMemberFormValues = z.infer<typeof addMemberSchema>;
 
+// Extended types for API responses
+type ChamaMemberWithUser = ChamaMember & {
+  user: Pick<User, "id" | "username" | "fullName" | "email" | "profilePic" | "location" | "phoneNumber">;
+};
+
+type ChamaInvitationWithUser = {
+  id: number;
+  chamaId: number;
+  role: string;
+  invitedUserId: number;
+  invitedByUserId: number;
+  status: string;
+  invitedAt: Date;
+  respondedAt: Date | null;
+  invitedUser: Pick<User, "id" | "username" | "fullName" | "email" | "profilePic">;
+  invitedByUser: Pick<User, "id" | "username" | "fullName">;
+};
+
+type ChamaMembersResponse = {
+  members: ChamaMemberWithUser[];
+};
+
+type ChamaInvitationsResponse = {
+  invitations: ChamaInvitationWithUser[];
+};
+
 export default function ChamaMembers() {
   const { id } = useParams<{ id: string }>();
-  const chamaId = parseInt(id);
+  const chamaId = parseInt(id || '');
+  const isValidChamaId = !isNaN(chamaId) && chamaId > 0;
   const { toast } = useToast();
   
   const [searchQuery, setSearchQuery] = useState("");
   const [openAddMemberDialog, setOpenAddMemberDialog] = useState(false);
-  const [selectedMember, setSelectedMember] = useState<any | null>(null);
+  const [selectedMember, setSelectedMember] = useState<ChamaMemberWithUser | null>(null);
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
   
-  const { data: members = [], isLoading } = useQuery({
+  const { data: members = [], isLoading, error } = useQuery<ChamaMemberWithUser[]>({
     queryKey: [`/api/chamas/${chamaId}/members`],
-    enabled: !isNaN(chamaId)
+    queryFn: async () => {
+      try {
+        if (!isValidChamaId) {
+          throw new Error("Invalid chama ID");
+        }
+        const response = await getChamaMembers(chamaId);
+        return response || [];
+      } catch (err) {
+        console.error('Error fetching members:', err);
+        toast({
+          title: "Error fetching members",
+          description: err instanceof Error ? err.message : "Failed to fetch members",
+          variant: "destructive",
+        });
+        return [];
+      }
+    },
+    enabled: isValidChamaId
   });
+
+  const { data: invitationsData = { invitations: [] }, isLoading: isLoadingInvitations } = useQuery<ChamaInvitationsResponse>({
+    queryKey: ["chamaInvitations", chamaId],
+    queryFn: async () => {
+      if (!isValidChamaId) {
+        throw new Error("Invalid chama ID");
+      }
+      const res = await apiRequest("GET", `/api/chamas/${chamaId}/invitations`);
+      return res.json();
+    },
+    enabled: isValidChamaId
+  });
+
+  const invitations = invitationsData?.invitations || [];
 
   // Form for adding new member
   const form = useForm<AddMemberFormValues>({
@@ -66,27 +127,26 @@ export default function ChamaMembers() {
     },
   });
 
-  // Mutation for adding a new member
-  const addMemberMutation = useMutation({
+  // Mutation for inviting a new member
+  const inviteMemberMutation = useMutation({
     mutationFn: async (data: AddMemberFormValues) => {
-      // In a real app, we'd first fetch the user ID by email
-      // Here we're mocking it with a placeholder ID of 999
-      const userId = 999; // This would be fetched from the API in a real app
-      
-      return addChamaMember(chamaId, userId, data.role);
+      return apiRequest("POST", `/api/chamas/${chamaId}/invitations`, {
+        email: data.email,
+        role: data.role
+      });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/chamas/${chamaId}/members`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/chamas/${chamaId}/invitations`] });
       toast({
-        title: "Member added",
-        description: "The member has been successfully added to the chama.",
+        title: "Invitation sent",
+        description: "The invitation has been sent successfully.",
       });
       setOpenAddMemberDialog(false);
       form.reset();
     },
     onError: (error) => {
       toast({
-        title: "Failed to add member",
+        title: "Failed to send invitation",
         description: error.message,
         variant: "destructive",
       });
@@ -94,7 +154,7 @@ export default function ChamaMembers() {
   });
 
   // Filter members based on search query
-  const filteredMembers = members.filter((member: any) => {
+  const filteredMembers = members.filter((member) => {
     if (!member?.user) return false;
     
     const name = member.user.fullName?.toLowerCase() || '';
@@ -106,7 +166,7 @@ export default function ChamaMembers() {
   });
 
   const onAddMemberSubmit = (data: AddMemberFormValues) => {
-    addMemberMutation.mutate(data);
+    inviteMemberMutation.mutate(data);
   };
 
   const getInitials = (name: string) => {
@@ -251,12 +311,12 @@ export default function ChamaMembers() {
                       </Button>
                       <Button 
                         type="submit"
-                        disabled={addMemberMutation.isPending}
+                        disabled={inviteMemberMutation.isPending}
                       >
-                        {addMemberMutation.isPending ? (
+                        {inviteMemberMutation.isPending ? (
                           <>
                             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            Adding...
+                            Sending...
                           </>
                         ) : (
                           <>
@@ -274,67 +334,132 @@ export default function ChamaMembers() {
         </div>
       </div>
       
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle>Member List</CardTitle>
-          <CardDescription>{members.length} members in this chama</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid gap-6">
-            {filteredMembers.map((member: any) => {
-              if (!member?.user) return null;
-              
-              return (
-                <Card key={member.id}>
-                  <CardContent className="p-6">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-4">
+      <Tabs defaultValue="members" className="mt-6">
+        <TabsList>
+          <TabsTrigger value="members" className="flex items-center gap-2">
+            <Users className="h-4 w-4" />
+            Members ({filteredMembers.length})
+          </TabsTrigger>
+          <TabsTrigger value="invitations" className="flex items-center gap-2">
+            <Mail className="h-4 w-4" />
+            Invitations ({invitations.length})
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="members" className="mt-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {isLoading ? (
+              <div className="col-span-full flex justify-center py-8">
+                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+              </div>
+            ) : filteredMembers.length === 0 ? (
+              <div className="col-span-full text-center py-8">
+                <p className="text-muted-foreground">No members found</p>
+              </div>
+            ) : (
+              filteredMembers.map((member: ChamaMemberWithUser) => (
+                <Card key={member.id} className="flex flex-col">
+                  <CardHeader>
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-center gap-3">
                         <Avatar>
-                          <AvatarImage src={member.user.profilePic || ""} alt={member.user.fullName} />
+                          <AvatarImage src={member.user.profilePic || undefined} />
                           <AvatarFallback>{getInitials(member.user.fullName)}</AvatarFallback>
                         </Avatar>
                         <div>
-                          <h3 className="font-medium">{member.user.fullName}</h3>
-                          <p className="text-sm text-muted-foreground">{member.user.email}</p>
-            </div>
-              </div>
-              
-                      <div className="flex items-center gap-4">
-                        <Badge className={getRoleBadgeStyles(member.role)}>
-                          {member.role}
-                        </Badge>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                  onClick={() => {
-                    setSelectedMember(member);
-                    setIsDetailsOpen(true);
-                  }}
-                >
-                      <MoreHorizontal className="h-4 w-4" />
+                          <CardTitle className="text-base">{member.user.fullName}</CardTitle>
+                          <CardDescription>{member.user.email}</CardDescription>
+                        </div>
+                      </div>
+                      <Badge className={getRoleBadgeStyles(member.role)}>
+                        {member.role}
+                      </Badge>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <Phone className="h-4 w-4" />
+                        {member.user.phoneNumber || "No phone number"}
+                      </div>
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <Calendar className="h-4 w-4" />
+                        Joined {new Date(member.joinedAt).toLocaleDateString()}
+                      </div>
+                    </div>
+                  </CardContent>
+                  <CardFooter className="mt-auto">
+                    <Button 
+                      variant="outline" 
+                      className="w-full"
+                      onClick={() => {
+                        setSelectedMember(member);
+                        setIsDetailsOpen(true);
+                      }}
+                    >
+                      View Details
                     </Button>
-                  </div>
-                </div>
+                  </CardFooter>
+                </Card>
+              ))
+            )}
+          </div>
+        </TabsContent>
+
+        <TabsContent value="invitations" className="mt-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {isLoadingInvitations ? (
+              <div className="col-span-full flex justify-center py-8">
+                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+              </div>
+            ) : invitations.length === 0 ? (
+              <div className="col-span-full text-center py-8">
+                <p className="text-muted-foreground">No pending invitations</p>
+              </div>
+            ) : (
+              invitations.map((invitation: ChamaInvitationWithUser) => (
+                <Card key={invitation.id}>
+                  <CardHeader>
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-center gap-3">
+                        <Avatar>
+                          <AvatarImage src={invitation.invitedUser.profilePic || undefined} />
+                          <AvatarFallback>
+                            {getInitials(invitation.invitedUser.fullName)}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div>
+                          <CardTitle className="text-base">
+                            {invitation.invitedUser.fullName}
+                          </CardTitle>
+                          <CardDescription>
+                            {invitation.invitedUser.email}
+                          </CardDescription>
+                        </div>
+                      </div>
+                      <Badge variant={invitation.status === "pending" ? "outline" : "secondary"}>
+                        {invitation.status}
+                      </Badge>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <AlertCircle className="h-4 w-4" />
+                        Invited as {invitation.role}
+                      </div>
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <Calendar className="h-4 w-4" />
+                        Sent {new Date(invitation.invitedAt).toLocaleDateString()}
+                      </div>
+                    </div>
                   </CardContent>
                 </Card>
-              );
-            })}
-            
-            {isLoading && (
-              <div className="text-center py-8">
-                <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4" />
-                <p className="text-muted-foreground">Loading members...</p>
-              </div>
+              ))
             )}
-            
-            {!isLoading && filteredMembers.length === 0 && (
-              <div className="text-center py-8">
-                <p className="text-muted-foreground">No members found</p>
-            </div>
-          )}
           </div>
-        </CardContent>
-      </Card>
+        </TabsContent>
+      </Tabs>
       
       {/* Member Details Dialog */}
       {selectedMember && (
