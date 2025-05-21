@@ -6,6 +6,7 @@ import NotificationPanel from "./pages/user/NotificationPanel";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { WalletProvider } from "./context/WalletContext";
 import { ChatProvider } from "./context/ChatContext";
+import { NotificationProvider } from "./context/NotificationContext";
 import HomePage from "./pages/user/HomePage";
 import LoginPage from "./pages/user/LoginPage";
 import RegisterPage from "./pages/user/RegisterPage";
@@ -38,7 +39,12 @@ import AdminBackup from "@/pages/admin/Backup";
 import AdminSecurity from "@/pages/admin/Security";
 import AdminSettings from "@/pages/admin/Settings";
 import ApiSettings from "@/pages/admin/ApiSettings";
-
+import AdminMarketplace from "@/pages/admin/Marketplace";
+import Messages from "@/pages/admin/Messages";
+import AIAssistant from "@/components/dashboard/AIAssistant";
+import UserLayout from "@/components/layout/UserLayout";
+import MyCartPage from "./pages/user/MyCartPage";
+import MyWishlistPage from "./pages/user/MyWishlistPage";
 
 function AuthenticatedRoutes() {
   return (
@@ -51,22 +57,22 @@ function AuthenticatedRoutes() {
       </Route>
       {/* Chama Routes */}
       <Route path="/chamas/:id">
-        {(params) => <ChamaDashboard id={params.id} />}
+        {(params) => <ChamaDashboard chamaId={params.id} />}
       </Route>
       <Route path="/chamas/:id/members">
-        {(params) => <ChamaMembers id={params.id} />}
+        {(params) => <ChamaMembers chamaId={params.id} />}
       </Route>
       <Route path="/chamas/:id/contributions">
-        {(params) => <ChamaContributions id={params.id} />}
+        {(params) => <ChamaContributions chamaId={params.id} />}
       </Route>
       <Route path="/chamas/:id/meetings">
-        {(params) => <ChamaMeetings id={params.id} />}
+        {(params) => <ChamaMeetings chamaId={params.id} />}
       </Route>
       <Route path="/chamas/:id/documents">
-        {(params) => <ChamaDocuments id={params.id} />}
+        {(params) => <ChamaDocuments chamaId={params.id} />}
       </Route>
       <Route path="/chamas/:id/settings">
-        {(params) => <ChamaSettings id={params.id} />}
+        {(params) => <ChamaSettings chamaId={params.id} />}
       </Route>
       <Route path="/messages">
         <MessagesPage />
@@ -77,11 +83,26 @@ function AuthenticatedRoutes() {
       <Route path="/marketplace">
         <MarketplacePage />
       </Route>
+      <Route path="/marketplace/cart">
+        <MyCartPage />
+      </Route>
+      <Route path="/marketplace/wishlist">
+        <MyWishlistPage />
+      </Route>
       <Route path="/marketplace/:id">
         {(params) => <ProductDetailPage id={params.id} />}
       </Route>
       <Route path="/learning">
         <LearningHubPage />
+      </Route>
+      <Route path="/ai-assistant">
+        <div className="h-screen">
+          <UserLayout title="AI Assistant">
+            <div className="max-w-4xl mx-auto">
+              <AIAssistant />
+            </div>
+          </UserLayout>
+        </div>
       </Route>
       <Route path="/settings">
         <SettingsPage />
@@ -99,6 +120,8 @@ function AuthenticatedRoutes() {
         <Route path="/admin/chamas" component={AdminChamas} />
         <Route path="/admin/reports" component={AdminReports} />
         <Route path="/admin/transactions" component={AdminTransactions} />
+        <Route path="/admin/marketplace" component={AdminMarketplace} />
+        <Route path="/admin/messages" component={Messages} />
         <Route path="/admin/ai-console" component={AdminAIConsole} />
         <Route path="/admin/backup" component={AdminBackup} />
         <Route path="/admin/security" component={AdminSecurity} />
@@ -138,7 +161,12 @@ function AppRoutes() {
     return <div className="flex h-screen w-full items-center justify-center">Loading...</div>;
   }
 
-  return isAuthenticated ? <AuthenticatedRoutes /> : <UnauthenticatedRoutes />;
+  return (
+    <>
+      {isAuthenticated && <NotificationPanel />}
+      {isAuthenticated ? <AuthenticatedRoutes /> : <UnauthenticatedRoutes />}
+    </>
+  );
 }
 
 // Main App component with all providers
@@ -147,10 +175,12 @@ function App() {
     <AuthProvider>
       <WalletProvider>
         <ChatProvider>
-          <TooltipProvider>
-            <Toaster />
-            <AppRoutes />
-          </TooltipProvider>
+          <NotificationProvider>
+            <TooltipProvider>
+              <Toaster />
+              <AppRoutes />
+            </TooltipProvider>
+          </NotificationProvider>
         </ChatProvider>
       </WalletProvider>
     </AuthProvider>

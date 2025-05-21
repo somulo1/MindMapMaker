@@ -13,6 +13,8 @@ export const users = pgTable("users", {
   location: text("location"),
   phoneNumber: text("phone_number"),
   role: text("role").default("user").notNull(),
+  isActive: boolean("is_active").default(true).notNull(),
+  lastActive: timestamp("last_active"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -20,7 +22,27 @@ export const insertUserSchema = createInsertSchema(users).omit({
   id: true,
   createdAt: true,
   role: true,
+  isActive: true,
+  lastActive: true,
 });
+
+// Export types
+export type User = {
+  id: number;
+  username: string;
+  email: string;
+  password: string;
+  fullName: string;
+  profilePic: string | null;
+  location: string | null;
+  phoneNumber: string | null;
+  role: string;
+  isActive: boolean;
+  lastActive: Date | null;
+  createdAt: Date;
+};
+
+export type InsertUser = z.infer<typeof insertUserSchema>;
 
 // Chama (Group) model
 export const chamas = pgTable("chamas", {
@@ -50,7 +72,7 @@ export const chamaMembers = pgTable("chama_members", {
   id: serial("id").primaryKey(),
   chamaId: integer("chama_id").notNull(),
   userId: integer("user_id").notNull(),
-  role: text("role").default("member").notNull(), // chairperson, treasurer, secretary, member, assistants
+  role: text("role").default("member").notNull(),
   contributionAmount: doublePrecision("contribution_amount").default(0),
   contributionFrequency: text("contribution_frequency").default("monthly"),
   rating: integer("rating").default(5),
@@ -62,6 +84,13 @@ export const insertChamaMemberSchema = createInsertSchema(chamaMembers).omit({
   id: true,
   joinedAt: true,
 });
+
+// Export types
+export type Chama = typeof chamas.$inferSelect;
+export type InsertChama = z.infer<typeof insertChamaSchema>;
+
+export type ChamaMember = typeof chamaMembers.$inferSelect;
+export type InsertChamaMember = z.infer<typeof insertChamaMemberSchema>;
 
 // Wallet model
 export const wallets = pgTable("wallets", {
@@ -118,13 +147,15 @@ export const messages = pgTable("messages", {
   chamaId: integer("chama_id"),
   itemId: integer("item_id"),
   content: text("content").notNull(),
-  isRead: boolean("is_read").default(false),
+  isRead: boolean("is_read").default(false).notNull(),
+  isSystemMessage: boolean("is_system_message").default(false).notNull(),
   sentAt: timestamp("sent_at").defaultNow().notNull(),
 });
 
 export const insertMessageSchema = createInsertSchema(messages).omit({
   id: true,
   isRead: true,
+  isSystemMessage: true,
   sentAt: true,
 });
 
@@ -223,35 +254,21 @@ export const insertAiConversationSchema = createInsertSchema(aiConversations).om
 });
 export const insertNotificationSchema = createInsertSchema(notifications).omit({ id: true, createdAt: true, read: true });
 // Export types
-export type User = typeof users.$inferSelect;
-export type InsertUser = z.infer<typeof insertUserSchema>;
 export type Notification = typeof notifications.$inferSelect;
 export type InsertNotification = z.infer<typeof insertNotificationSchema>;
-export type Chama = typeof chamas.$inferSelect;
-export type InsertChama = z.infer<typeof insertChamaSchema>;
-
-export type ChamaMember = typeof chamaMembers.$inferSelect;
-export type InsertChamaMember = z.infer<typeof insertChamaMemberSchema>;
-
 export type Wallet = typeof wallets.$inferSelect;
 export type InsertWallet = z.infer<typeof insertWalletSchema>;
-
 export type Transaction = typeof transactions.$inferSelect;
 export type InsertTransaction = z.infer<typeof insertTransactionSchema>;
-
 export type Message = typeof messages.$inferSelect;
 export type InsertMessage = z.infer<typeof insertMessageSchema>;
-
 export type LearningResource = typeof learningResources.$inferSelect;
 export type InsertLearningResource = z.infer<typeof insertLearningResourceSchema>;
-
 export type MarketplaceItem = typeof marketplaceItems.$inferSelect;
 export type InsertMarketplaceItem = z.infer<typeof insertMarketplaceItemSchema>;
-
 export type WishlistItem = typeof wishlistItems.$inferSelect;
 export type CartItem = typeof cartItems.$inferSelect;
 export type Order = typeof orders.$inferSelect;
 export type OrderItem = typeof orderItems.$inferSelect;
-
 export type AiConversation = typeof aiConversations.$inferSelect;
 export type InsertAiConversation = z.infer<typeof insertAiConversationSchema>;

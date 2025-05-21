@@ -1,22 +1,13 @@
 import React from 'react';
-import { Card } from '@/components/ui/card';
+import { Card, CardContent, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { Link } from 'wouter';
 import { Users, Sprout } from 'lucide-react';
+import { Chama } from "@shared/schema";
 
 interface ChamaCardProps {
-  chama: {
-    id: number;
-    name: string;
-    description?: string;
-    icon: string;
-    iconBg: string;
-    memberCount: number;
-    balance: number;
-    establishedDate: string;
-    nextMeeting?: string;
-  };
+  chama: Chama;
 }
 
 const ChamaCard: React.FC<ChamaCardProps> = ({ chama }) => {
@@ -58,35 +49,45 @@ const ChamaCard: React.FC<ChamaCardProps> = ({ chama }) => {
   const nextMeetingDate = chama.nextMeeting ? formatDate(chama.nextMeeting) : 'Not scheduled';
 
   return (
-    <div className="bg-white dark:bg-neutral-800 rounded-xl shadow-sm overflow-hidden">
-      <div className={`h-24 ${getBgColorClass()} flex items-end p-4`}>
-        <div className="w-16 h-16 rounded-lg bg-white dark:bg-neutral-800 shadow-md flex items-center justify-center -mb-8">
-          <span className={`text-${chama.iconBg}`}>
-            {getIconComponent()}
-          </span>
+    <Card>
+      <CardContent className="p-6">
+        <div className="flex justify-between items-start mb-4">
+          <div>
+            <h3 className="text-lg font-semibold mb-1">{chama.name}</h3>
+            <p className="text-sm text-muted-foreground">
+              {chama.description || "No description provided"}
+            </p>
+          </div>
         </div>
-      </div>
-      <div className="p-4 pt-10">
-        <h3 className="font-semibold text-lg">{chama.name}</h3>
-        <p className="text-sm text-neutral-500 dark:text-neutral-400 mb-3">
-          {chama.memberCount} members • Est. {formattedEstablished}
-        </p>
-        <div className="flex justify-between items-center mb-3">
-          <span className="text-sm font-medium">Next Meeting</span>
-          <span className="text-sm text-neutral-700 dark:text-neutral-300">{nextMeetingDate}</span>
+
+        <div className="space-y-4">
+          <div className="flex justify-between items-center">
+            <span className="text-sm text-muted-foreground">Balance</span>
+            <span className="font-medium">KES {chama.balance.toLocaleString()}</span>
+          </div>
+          
+          <div className="flex justify-between items-center">
+            <span className="text-sm text-muted-foreground">Members</span>
+            <span className="font-medium">{chama.memberCount}</span>
+          </div>
+          
+          <div className="flex justify-between items-center">
+            <span className="text-sm text-muted-foreground">Established</span>
+            <span className="font-medium">
+              {new Date(chama.establishedDate).toLocaleDateString()}
+            </span>
+          </div>
         </div>
-        <div className="flex justify-between items-center mb-4">
-          <span className="text-sm font-medium">Group Balance</span>
-          <span className="text-sm font-semibold text-neutral-700 dark:text-neutral-300">{formattedBalance}</span>
-        </div>
-        <Button 
-          className={`w-full ${getButtonColorClass()} text-white py-2 rounded-lg transition-colors`}
-          asChild
-        >
-          <Link href={`/chamas/${chama.id}`}>View Chama</Link>
+      </CardContent>
+      
+      <CardFooter className="bg-muted p-4">
+        <Button variant="link" className="text-primary p-0" asChild>
+          <Link to={`/chamas/${chama.id}`}>
+            View Dashboard
+          </Link>
         </Button>
-      </div>
-    </div>
+      </CardFooter>
+    </Card>
   );
 };
 

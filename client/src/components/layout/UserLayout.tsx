@@ -46,15 +46,26 @@ export default function UserLayout({ children, title = "Chama App" }: UserLayout
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
-      <Header 
-        toggleSidebar={() => setSidebarOpen(!sidebarOpen)} 
-        openNotifications={() => setNotificationsOpen(true)}
-        title={title}
-        notifications={unreadCount}
-      />
-      
-      <div className="flex flex-1 overflow-hidden">
-        <div id="sidebar">
+      {/* Fixed header */}
+      <div className="sticky top-0 z-50 bg-background">
+        <Header 
+          toggleSidebar={() => setSidebarOpen(!sidebarOpen)} 
+          title={title}
+        />
+      </div>
+
+      {/* Main content area with sidebar and main content */}
+      <div className="flex flex-1 h-[calc(100vh-4rem)]">
+        {/* Sidebar */}
+        <div className="hidden md:block w-64 flex-shrink-0">
+          <Sidebar 
+            isOpen={sidebarOpen} 
+            closeSidebar={() => setSidebarOpen(false)} 
+          />
+        </div>
+
+        {/* Mobile sidebar */}
+        <div className="md:hidden">
           <Sidebar 
             isOpen={sidebarOpen} 
             closeSidebar={() => setSidebarOpen(false)} 
@@ -69,13 +80,18 @@ export default function UserLayout({ children, title = "Chama App" }: UserLayout
           />
         )}
         
+        {/* Main content */}
         <main className="flex-1 overflow-y-auto bg-muted p-4 md:p-6 pb-20 md:pb-6">
           {children}
         </main>
       </div>
       
-      <MobileNavigation />
+      {/* Mobile navigation */}
+      <div className="fixed bottom-0 left-0 right-0 md:hidden">
+        <MobileNavigation />
+      </div>
       
+      {/* Notification panel */}
       <div id="notification-panel">
         <NotificationPanel 
           isOpen={notificationsOpen} 
@@ -83,7 +99,7 @@ export default function UserLayout({ children, title = "Chama App" }: UserLayout
         />
       </div>
       
-      {/* Notification panel overlay for mobile */}
+      {/* Notification panel overlay */}
       {notificationsOpen && (
         <div 
           className="fixed inset-0 bg-black/50 z-20" 

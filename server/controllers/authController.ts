@@ -36,6 +36,13 @@ export async function register(req: Request, res: Response) {
         password: hashedPassword,
     });
 
+    // Create user wallet
+    await storage.createWallet({
+        userId: newUser.id,
+        balance: 0,
+        type: "user"
+    });
+
     // Remove password from response
     const {password, ...userWithoutPassword} = newUser;
 

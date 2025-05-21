@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { useMediaQuery } from '@/hooks/use-mobile';
-import MobileLayout from '@/components/layouts/MobileLayout';
-import DesktopLayout from '@/components/layouts/DesktopLayout';
+import UserLayout from '@/components/layout/UserLayout';
 import QuickActions from '@/components/dashboard/QuickActions';
 import WalletCard from '@/components/dashboard/WalletCard';
 import TransactionList from '@/components/dashboard/TransactionList';
@@ -37,6 +36,7 @@ import {
     FormMessage
 } from '@/components/ui/form';
 import {useLocation} from "wouter";
+import CreateChamaDialog from '@/components/chama/CreateChamaDialog';
 
 // Create Chama Schema
 const createChamaSchema = z.object({
@@ -91,65 +91,84 @@ const PersonalDashboardPage: React.FC = () => {
   const firstName = user?.fullName ? user.fullName.split(' ')[0] : user?.username;
   
   const mobileContent = (
-    <div className="p-4">
+    <div className="space-y-6">
       {/* Welcome Section */}
-      <section className="mb-5">
+      <section>
         <h1 className="text-xl font-bold mb-1">Hello, {firstName}</h1>
         <p className="text-neutral-500 dark:text-neutral-400 text-sm">Welcome to your financial hub</p>
       </section>
       
       {/* Wallet Card */}
       <WalletCard
-          onDeposit={() => navigate("/wallet/#deposit")}
-          onTransfer={() => navigate("/wallet/#transfer")}
+        onDeposit={() => navigate("/wallet/#deposit")}
+        onTransfer={() => navigate("/wallet/#transfer")}
       />
       
       {/* Quick Actions */}
+      <section>
+        <div className="grid grid-cols-4 gap-6">
+          <button
+            className="flex flex-col items-center space-y-1"
+            onClick={() => setIsChamaOpen(true)}
+          >
+            <MdGroups className="text-4xl text-blue-600" />
+            <span className="text-sm font-semibold text-black">Chamas</span>
+          </button>
+
+          <button
+            className="flex flex-col items-center space-y-1"
+            onClick={() => navigate('/wallet')}
+          >
+            <MdReceiptLong className="text-4xl text-green-600" />
+            <span className="text-sm font-semibold text-black">History</span>
+          </button>
+
+          <button
+            className="flex flex-col items-center space-y-1"
+            onClick={() => navigate('/marketplace')}
+          >
+            <MdStore className="text-4xl text-yellow-500" />
+            <span className="text-sm font-semibold text-black">Market</span>
+          </button>
+
+          <button
+            className="flex flex-col items-center space-y-1"
+            onClick={() => navigate('/ai-assistant')}
+          >
+            <MdSmartToy className="text-4xl text-purple-600" />
+            <span className="text-sm font-semibold text-black">AI Help</span>
+          </button>
+        </div>
+      </section>
       
-
-<section className="mb-5">
-  <div className="grid grid-cols-4 gap-6">
-    <button
-      className="flex flex-col items-center space-y-1"
-      onClick={() => setIsChamaOpen(true)}
-    >
-      <MdGroups className="text-4xl text-blue-600" />
-      <span className="text-sm font-semibold text-black">Chamas</span>
-    </button>
-
-    <button
-      className="flex flex-col items-center space-y-1"
-      onClick={() => (window.location.href = '/wallet')}
-    >
-      <MdReceiptLong className="text-4xl text-green-600" />
-      <span className="text-sm font-semibold text-black">History</span>
-    </button>
-
-    <button
-      className="flex flex-col items-center space-y-1"
-      onClick={() => (window.location.href = '/marketplace')}
-    >
-      <MdStore className="text-4xl text-yellow-500" />
-      <span className="text-sm font-semibold text-black">Market</span>
-    </button>
-
-    <button
-      className="flex flex-col items-center space-y-1"
-      onClick={() => (window.location.href = '/ai-assistant')}
-    >
-      <MdSmartToy className="text-4xl text-purple-600" />
-      <span className="text-sm font-semibold text-black">AI Help</span>
-    </button>
-  </div>
-</section>
-
-
+      {/* My Chamas - Mobile */}
+      <section className="space-y-4">
+        <div className="flex justify-between items-center">
+          <h2 className="text-base font-semibold">My Chamas</h2>
+          <Button variant="link" className="text-primary text-xs font-medium" asChild>
+            <a href="/chamas">View All</a>
+          </Button>
+        </div>
+        <div className="overflow-x-auto pb-2">
+          <ChamaList onCreateChama={() => setIsChamaOpen(true)} />
+        </div>
+      </section>
       
-      {/* My Chamas */}
-      <ChamaList onCreateChama={() => setIsChamaOpen(true)} />
+      {/* Learning Hub Preview - Mobile */}
+      <section className="space-y-4">
+        <div className="flex justify-between items-center">
+          <h2 className="text-base font-semibold">Learning Hub</h2>
+          <Button variant="link" className="text-primary text-xs font-medium" asChild>
+            <a href="/learning">View All</a>
+          </Button>
+        </div>
+        <div className="overflow-x-auto pb-2">
+          <LearningHub limit={2} showTitle={false} />
+        </div>
+      </section>
       
       {/* Recent Transactions */}
-      <section className="mb-5">
+      <section>
         <div className="flex justify-between items-center mb-3">
           <h2 className="text-base font-semibold">Recent Transactions</h2>
           <Button variant="link" className="text-primary text-xs font-medium" asChild>
@@ -159,169 +178,80 @@ const PersonalDashboardPage: React.FC = () => {
         
         <TransactionList limit={6} showViewAll={false} />
       </section>
-      
-      {/* Learning Hub Preview */}
-      <section className="mb-5">
-        <div className="flex justify-between items-center mb-3">
-          <h2 className="text-base font-semibold">Learning Hub</h2>
-          <Button variant="link" className="text-primary text-xs font-medium" asChild>
-            <a href="/learning">View All</a>
-          </Button>
-        </div>
-        
-        <LearningHub limit={2} showTitle={false} />
-      </section>
     </div>
   );
   
   const desktopContent = (
-    <>
+    <div className="space-y-6">
       <QuickActions
-          onTransfer={() => navigate("/wallet/#transfer")}
-          onDeposit={() => navigate("/wallet/#deposit")}
-          onWithdraw={() => navigate("/wallet/#withdraw")}
+        onTransfer={() => navigate("/wallet/#transfer")}
+        onDeposit={() => navigate("/wallet/#deposit")}
+        onWithdraw={() => navigate("/wallet/#withdraw")}
         onCreateChama={() => setIsChamaOpen(true)}
       />
       
-      <div className="flex flex-col md:flex-row gap-4 mb-6">
+      <div className="grid md:grid-cols-2 gap-6">
         {/* Wallet Card */}
-        <div className="flex-1">
+        <div>
           <WalletCard
-              onDeposit={() => navigate("/wallet/#deposit")}
-              onTransfer={() => navigate("/wallet/#transfer")}
+            onDeposit={() => navigate("/wallet/#deposit")}
+            onTransfer={() => navigate("/wallet/#transfer")}
           />
         </div>
         
         {/* Recent Transactions */}
-        <div className="flex-1">
+        <div>
           <TransactionList />
         </div>
       </div>
       
-      {/* My Chamas */}
-      <ChamaList onCreateChama={() => setIsChamaOpen(true)} />
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6">
+        {/* My Chamas - Desktop */}
+        <div className="bg-white dark:bg-neutral-900 rounded-lg p-4 shadow-sm">
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-lg font-semibold">My Chamas</h2>
+            <Button variant="link" className="text-primary text-sm font-medium" asChild>
+              <a href="/chamas">View All</a>
+            </Button>
+          </div>
+          <div className="overflow-y-auto max-h-[400px]">
+            <ChamaList onCreateChama={() => setIsChamaOpen(true)} />
+          </div>
+        </div>
+        
+        {/* Learning Hub - Desktop */}
+        <div className="bg-white dark:bg-neutral-900 rounded-lg p-4 shadow-sm">
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-lg font-semibold">Learning Hub</h2>
+            <Button variant="link" className="text-primary text-sm font-medium" asChild>
+              <a href="/learning">View All</a>
+            </Button>
+          </div>
+          <div className="overflow-y-auto max-h-[400px]">
+            <LearningHub limit={3} />
+          </div>
+        </div>
+      </div>
       
-      {/* Learning Hub */}
-      <LearningHub />
-      
-      {/* AI Assistant */}
+      {/* AI Assistant Preview */}
       <AIAssistant />
       
       {/* Marketplace Preview */}
       <MarketplacePreview />
-    </>
+    </div>
   );
-  
+
   return (
-    <>
-      {isMobile ? (
-        <MobileLayout>
-          {mobileContent}
-        </MobileLayout>
-      ) : (
-        <DesktopLayout 
-          title="Personal Dashboard" 
-          subtitle={`Welcome back, ${firstName}. Here's your financial overview.`}
-        >
-          {desktopContent}
-        </DesktopLayout>
-      )}
-      
-      {/* Create Chama Dialog */}
-      <Dialog open={isChamaOpen} onOpenChange={setIsChamaOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Create New Chama</DialogTitle>
-            <DialogDescription>
-              Start a new savings or investment group with friends and family.
-            </DialogDescription>
-          </DialogHeader>
-          
-          <Form {...chamaForm}>
-            <form onSubmit={chamaForm.handleSubmit(onCreateChamaSubmit)} className="space-y-4">
-              <FormField
-                control={chamaForm.control}
-                name="name"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Chama Name</FormLabel>
-                    <FormControl>
-                      <Input placeholder="e.g., Kilimani Investment Chama" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              
-              <FormField
-                control={chamaForm.control}
-                name="description"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Description (Optional)</FormLabel>
-                    <FormControl>
-                      <Input placeholder="e.g., A group for real estate investments" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              
-              <div className="grid grid-cols-2 gap-4">
-                <FormField
-                  control={chamaForm.control}
-                  name="icon"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Icon</FormLabel>
-                      <FormControl>
-                        <select 
-                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                          {...field}
-                        >
-                          <option value="groups">Group</option>
-                          <option value="grass">Agriculture</option>
-                          <option value="account_balance">Finance</option>
-                          <option value="storefront">Business</option>
-                        </select>
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                
-                <FormField
-                  control={chamaForm.control}
-                  name="iconBg"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Theme Color</FormLabel>
-                      <FormControl>
-                        <select 
-                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                          {...field}
-                        >
-                          <option value="primary">Blue</option>
-                          <option value="secondary">Green</option>
-                          <option value="accent">Orange</option>
-                        </select>
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-              
-              <DialogFooter>
-                <Button type="submit" disabled={chamaForm.formState.isSubmitting}>
-                  {chamaForm.formState.isSubmitting ? "Creating..." : "Create Chama"}
-                </Button>
-              </DialogFooter>
-            </form>
-          </Form>
-        </DialogContent>
-      </Dialog>
-    </>
+    <UserLayout title="Dashboard">
+      <div className="max-w-7xl mx-auto">
+        {isMobile ? mobileContent : desktopContent}
+      </div>
+
+      <CreateChamaDialog 
+        open={isChamaOpen} 
+        onOpenChange={setIsChamaOpen} 
+      />
+    </UserLayout>
   );
 };
 

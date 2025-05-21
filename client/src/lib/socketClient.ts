@@ -20,28 +20,52 @@ export function useWebSocket({ userId }: UseWebSocketProps) {
 
     try {
       // Close existing connection if any
-      if (socketRef.current && socketRef.current.readyState < WebSocket.CLOSED) {
+      if (socketRef.current) {
         socketRef.current.close();
       }
 
       // Create new WebSocket connection
-      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-      const wsUrl = `${protocol}//${window.location.host}/ws`;
-      const socket = new WebSocket(wsUrl);
-      socketRef.current = socket;
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsUrl = `${protocol}//localhost:5000/ws?token=${userId}`;
+      const ws = new WebSocket(wsUrl);
 
-      socket.onopen = () => {
+      ws.onopen = () => {
         setIsConnected(true);
         setError(null);
-        
         // Send authentication message
-        socket.send(JSON.stringify({
+        ws.send(JSON.stringify({
           type: 'auth',
           userId
         }));
       };
 
-      socket.onclose = (event) => {
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          
+          // Handle authentication success
+          if (data.type === 'auth_success') {
+            setIsAuthenticated(true);
+            return;
+          }
+          
+          // Handle errors
+          if (data.type === 'error') {
+            setError(data.message);
+            return;
+          }
+          
+          // Notify all handlers for this message type
+          const handlers = messageHandlersRef.current.get(data.type);
+          if (handlers) {
+            handlers.forEach(handler => handler(data));
+          }
+        } catch (err) {
+          console.error('Error processing message:', err);
+        }
+      };
+
+      ws.onclose = () => {
         setIsConnected(false);
         setIsAuthenticated(false);
         
@@ -49,56 +73,28 @@ export function useWebSocket({ userId }: UseWebSocketProps) {
         if (reconnectTimeoutRef.current) {
           clearTimeout(reconnectTimeoutRef.current);
         }
-        
-        reconnectTimeoutRef.current = setTimeout(() => {
-          connect();
-        }, 3000); // Reconnect after 3 seconds
+        reconnectTimeoutRef.current = setTimeout(connect, 5000);
       };
 
-      socket.onerror = (error) => {
+      ws.onerror = () => {
         setError('WebSocket connection error');
-        console.error('WebSocket error:', error);
       };
 
-      socket.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          
-          // Handle authentication success
-          if (data.type === 'auth_success') {
-            setIsAuthenticated(true);
-          }
-          
-          // Handle auth error
-          if (data.type === 'error' && data.message.includes('Authentication failed')) {
-            setIsAuthenticated(false);
-          }
-          
-          // Dispatch message to registered handlers
-          const handlers = messageHandlersRef.current.get(data.type);
-          if (handlers) {
-            handlers.forEach(handler => handler(data));
-          }
-          
-        } catch (error) {
-          console.error('Error parsing WebSocket message:', error);
-        }
-      };
-    } catch (error) {
-      setError('Failed to create WebSocket connection');
-      console.error('WebSocket connection error:', error);
+      socketRef.current = ws;
+    } catch (err) {
+      console.error('Error setting up WebSocket:', err);
+      setError('Failed to establish WebSocket connection');
     }
   }, [userId]);
 
-  // Register a message handler
-  const registerHandler = useCallback((type: string, handler: MessageHandler) => {
+  // Subscribe to message types
+  const subscribe = useCallback((type: string, handler: MessageHandler) => {
     if (!messageHandlersRef.current.has(type)) {
       messageHandlersRef.current.set(type, new Set());
     }
-    
     messageHandlersRef.current.get(type)!.add(handler);
     
-    // Return a function to unregister the handler
+    // Return unsubscribe function
     return () => {
       const handlers = messageHandlersRef.current.get(type);
       if (handlers) {
@@ -110,81 +106,68 @@ export function useWebSocket({ userId }: UseWebSocketProps) {
     };
   }, []);
 
-  // Send a message
-  const sendMessage = useCallback((type: string, data: any) => {
-    if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN || !isAuthenticated) {
-      setError('Cannot send message: WebSocket not connected or authenticated');
-      return false;
-    }
-    
-    try {
-      socketRef.current.send(JSON.stringify({
-        type,
-        ...data
-      }));
+  // Send message through WebSocket
+  const send = useCallback((data: any) => {
+    if (socketRef.current && isConnected && isAuthenticated) {
+      socketRef.current.send(JSON.stringify(data));
       return true;
-    } catch (error) {
-      setError('Failed to send message');
-      console.error('Send message error:', error);
-      return false;
     }
-  }, [isAuthenticated]);
+    return false;
+  }, [isConnected, isAuthenticated]);
 
-  // Join a chama chat
-  const joinChamaChat = useCallback((chamaId: number) => {
-    return sendMessage('join_chama', { chamaId });
-  }, [sendMessage]);
-
-  // Send a direct message
+  // Chat-specific functions
   const sendDirectMessage = useCallback((receiverId: number, content: string) => {
-    return sendMessage('direct_message', { receiverId, content });
-  }, [sendMessage]);
+    return send({
+      type: 'direct_message',
+      receiverId,
+      content
+    });
+  }, [send]);
 
-  // Send a chama message
   const sendChamaMessage = useCallback((chamaId: number, content: string) => {
-    return sendMessage('chama_message', { chamaId, content });
-  }, [sendMessage]);
+    return send({
+      type: 'chama_message',
+      chamaId,
+      content
+    });
+  }, [send]);
 
-  // Mark a message as read
+  const joinChamaChat = useCallback((chamaId: number) => {
+    return send({
+      type: 'join_chama',
+      chamaId
+    });
+  }, [send]);
+
   const markMessageAsRead = useCallback((messageId: number) => {
-    return sendMessage('mark_read', { messageId });
-  }, [sendMessage]);
+    return send({
+      type: 'mark_read',
+      messageId
+    });
+  }, [send]);
 
-  // Connect/disconnect on userId changes
+  // Connect on mount or when userId changes
   useEffect(() => {
-    if (userId) {
-      connect();
-    } else {
-      // Close connection if userId is null
-      if (socketRef.current && socketRef.current.readyState < WebSocket.CLOSED) {
+    connect();
+    return () => {
+      if (socketRef.current) {
         socketRef.current.close();
       }
-      
-      setIsConnected(false);
-      setIsAuthenticated(false);
-    }
-    
-    // Cleanup on unmount
-    return () => {
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
       }
-      
-      if (socketRef.current && socketRef.current.readyState < WebSocket.CLOSED) {
-        socketRef.current.close();
-      }
     };
-  }, [userId, connect]);
+  }, [connect]);
 
   return {
     isConnected,
     isAuthenticated,
     error,
-    registerHandler,
-    sendMessage,
-    joinChamaChat,
+    registerHandler: subscribe,
+    send,
     sendDirectMessage,
     sendChamaMessage,
+    joinChamaChat,
     markMessageAsRead
   };
 }

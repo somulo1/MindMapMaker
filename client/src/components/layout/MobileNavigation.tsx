@@ -38,10 +38,10 @@ export default function MobileNavigation() {
           </button>
         </Link>
         
-        <Link to="/chama">
+        <Link to="/chamas">
           <button 
             className={`flex flex-col items-center justify-center p-3 ${
-              isActive("/chama") ? "text-primary" : "text-muted-foreground"
+              isActive("/chamas") ? "text-primary" : "text-muted-foreground"
             }`}
           >
             <Users className="h-5 w-5" />
@@ -60,10 +60,10 @@ export default function MobileNavigation() {
           </button>
         </Link>
         
-        <Link to="/chat">
+        <Link to="/messages">
           <button 
             className={`flex flex-col items-center justify-center p-3 relative ${
-              isActive("/chat") ? "text-primary" : "text-muted-foreground"
+              isActive("/messages") ? "text-primary" : "text-muted-foreground"
             }`}
           >
             <MessageSquare className="h-5 w-5" />

@@ -11,22 +11,27 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { useToast } from '@/hooks/use-toast';
 import { Badge } from '@/components/ui/badge';
+import { ScrollArea } from '@/components/ui/scroll-area';
 
 interface Conversation {
   id: number;
   name: string;
   type: 'user' | 'chama';
+  icon?: string;
+  iconBg?: string;
   lastMessage: {
     content: string;
     sentAt: string;
+    isSystemMessage?: boolean;
   };
   unreadCount: number;
+  isGroupChat?: boolean;
 }
 
 interface ConversationListProps {
   conversations: Conversation[];
   onSelectConversation: (id: number, type: 'user' | 'chama', name: string) => void;
-  selectedId: number | null;
+  selectedId?: number | null;
 }
 
 // New conversation schema
@@ -35,8 +40,8 @@ const newConversationSchema = z.object({
   initialMessage: z.string().min(1, { message: "Message is required" }),
 });
 
-const ConversationList: React.FC<ConversationListProps> = ({ 
-  conversations, 
+const ConversationList: React.FC<ConversationListProps> = ({
+  conversations,
   onSelectConversation,
   selectedId
 }) => {
@@ -73,22 +78,17 @@ const ConversationList: React.FC<ConversationListProps> = ({
       
       // Simulate selecting the new conversation
       onSelectConversation(values.recipientId, 'user', `User ${values.recipientId}`);
-    } catch (error) {
+    } catch (error: any) {
       toast({
         variant: "destructive",
         title: "Failed to start conversation",
-        description: error.message || "An error occurred while starting the conversation.",
+        description: error?.message || "An error occurred while starting the conversation.",
       });
     }
   };
   
-  const formatMessageDate = (dateString: string) => {
-    try {
-      const date = new Date(dateString);
-      return formatDistanceToNow(date, { addSuffix: true });
-    } catch (error) {
-      return 'Unknown time';
-    }
+  const formatMessagePreview = (content: string) => {
+    return content.length > 50 ? content.substring(0, 47) + '...' : content;
   };
   
   return (
@@ -122,71 +122,70 @@ const ConversationList: React.FC<ConversationListProps> = ({
         
         {/* Conversation List */}
         <div className="flex-1 overflow-y-auto">
-          {filteredConversations.length === 0 ? (
-            <div className="flex items-center justify-center h-full p-4">
-              <div className="text-center">
-                <p className="text-neutral-500 dark:text-neutral-400">
-                  {searchTerm 
-                    ? "No conversations match your search." 
-                    : "No conversations yet."}
-                </p>
-                <Button 
-                  variant="outline" 
-                  className="mt-2"
-                  onClick={() => setIsNewConversationOpen(true)}
-                >
-                  Start a Conversation
-                </Button>
-              </div>
-            </div>
-          ) : (
-            <div className="divide-y divide-neutral-200 dark:divide-neutral-700">
+          <ScrollArea className="h-full">
+            <div className="p-4 space-y-2">
               {filteredConversations.map((conversation) => (
-                <div 
+                <Button
                   key={`${conversation.type}-${conversation.id}`}
-                  className={`p-4 flex items-center cursor-pointer hover:bg-neutral-100 dark:hover:bg-neutral-800 ${
-                    selectedId === conversation.id ? 'bg-neutral-100 dark:bg-neutral-800' : ''
-                  }`}
+                  variant={selectedId === conversation.id ? "secondary" : "ghost"}
+                  className="w-full justify-start p-3 h-auto"
                   onClick={() => onSelectConversation(conversation.id, conversation.type, conversation.name)}
                 >
-                  <div className="relative">
-                    <Avatar
-                      src={null}
-                      fallback={conversation.name.substring(0, 2).toUpperCase()}
-                      size="md"
-                      className={conversation.type === 'chama' ? 'bg-primary' : ''}
-                    />
-                    
-                    {conversation.unreadCount > 0 && (
-                      <Badge className="absolute -top-1 -right-1 px-1.5 py-0.5 min-w-[20px] h-5 flex items-center justify-center">
-                        {conversation.unreadCount}
-                      </Badge>
+                  <div className="flex items-start w-full">
+                    {conversation.type === 'chama' ? (
+                      <div className={`w-10 h-10 rounded-full bg-${conversation.iconBg || 'primary'} flex items-center justify-center text-white`}>
+                        <Users className="h-5 w-5" />
+                      </div>
+                    ) : (
+                      <Avatar
+                        src={null}
+                        fallback={conversation.name.substring(0, 2).toUpperCase()}
+                        size="md"
+                      />
                     )}
                     
-                    <div className="absolute -bottom-1 -right-1 bg-white dark:bg-neutral-900 rounded-full p-0.5">
-                      {conversation.type === 'chama' ? (
-                        <Users className="h-3 w-3 text-primary" />
-                      ) : (
-                        <User className="h-3 w-3 text-neutral-500" />
+                    <div className="ml-3 flex-1 min-w-0">
+                      <div className="flex justify-between items-start">
+                        <div className="flex items-center">
+                          <p className="font-medium text-sm truncate">
+                            {conversation.name}
+                          </p>
+                          {conversation.type === 'chama' && (
+                            <Badge variant="outline" className="ml-2 text-xs">
+                              Chama
+                            </Badge>
+                          )}
+                        </div>
+                        <span className="text-xs text-muted-foreground whitespace-nowrap ml-2">
+                          {formatDistanceToNow(new Date(conversation.lastMessage.sentAt), { addSuffix: true })}
+                        </span>
+                      </div>
+                      
+                      <p className="text-sm text-muted-foreground truncate mt-1">
+                        {conversation.lastMessage.isSystemMessage ? (
+                          <span className="italic">{formatMessagePreview(conversation.lastMessage.content)}</span>
+                        ) : (
+                          formatMessagePreview(conversation.lastMessage.content)
+                        )}
+                      </p>
+                      
+                      {conversation.unreadCount > 0 && (
+                        <Badge variant="default" className="mt-1">
+                          {conversation.unreadCount} new
+                        </Badge>
                       )}
                     </div>
                   </div>
-                  
-                  <div className="ml-3 flex-1 min-w-0">
-                    <div className="flex justify-between items-center">
-                      <h3 className="font-medium truncate">{conversation.name}</h3>
-                      <span className="text-xs text-neutral-500 dark:text-neutral-400 whitespace-nowrap ml-2">
-                        {formatMessageDate(conversation.lastMessage.sentAt)}
-                      </span>
-                    </div>
-                    <p className="text-sm text-neutral-500 dark:text-neutral-400 truncate">
-                      {conversation.lastMessage.content}
-                    </p>
-                  </div>
-                </div>
+                </Button>
               ))}
+              
+              {filteredConversations.length === 0 && (
+                <div className="text-center py-8">
+                  <p className="text-muted-foreground">No conversations match your search.</p>
+                </div>
+              )}
             </div>
-          )}
+          </ScrollArea>
         </div>
       </div>
       

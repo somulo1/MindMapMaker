@@ -34,12 +34,26 @@ export function useWallet() {
   // Fetch user wallet
   const { data: userWalletData, isLoading: isLoadingUserWallet } = useQuery({
     queryKey: ['/api/wallets/user'],
+    queryFn: async () => {
+      const response = await apiRequest('GET', '/api/wallets/user');
+      if (!response.ok) {
+        throw new Error('Failed to fetch wallet');
+      }
+      return response.json();
+    },
     enabled: !!user,
   });
   
   // Fetch user transactions
   const { data: userTransactionsData, isLoading: isLoadingUserTransactions } = useQuery({
     queryKey: ['/api/transactions/user'],
+    queryFn: async () => {
+      const response = await apiRequest('GET', '/api/transactions/user');
+      if (!response.ok) {
+        throw new Error('Failed to fetch transactions');
+      }
+      return response.json();
+    },
     enabled: !!user,
   });
   

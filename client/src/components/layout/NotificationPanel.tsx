@@ -66,7 +66,8 @@ export default function NotificationPanel({ isOpen, closeNotifications }: Notifi
     }
   };
 
-  const formatTime = (timestamp: string) => {
+  const formatTime = (timestamp: string | null) => {
+    if (!timestamp) return "some time ago";
     try {
       return formatDistanceToNow(new Date(timestamp), { addSuffix: true });
     } catch (e) {
@@ -75,69 +76,77 @@ export default function NotificationPanel({ isOpen, closeNotifications }: Notifi
   };
 
   const panelClasses = `
-    fixed inset-y-0 right-0 max-w-xs w-full bg-white shadow-lg z-30 
+    fixed top-16 bottom-0 right-0 max-w-xs w-full bg-white shadow-lg z-[100]
     transform transition-transform duration-300 ease-in-out
     ${isOpen ? 'translate-x-0' : 'translate-x-full'}
   `;
 
   return (
-    <div className={panelClasses}>
-      <div className="h-full flex flex-col">
-        <div className="p-4 border-b border-border flex justify-between items-center">
-          <h3 className="text-lg font-medium">Notifications</h3>
-          <Button variant="ghost" size="icon" onClick={closeNotifications}>
-            <X className="h-5 w-5" />
-            <span className="sr-only">Close</span>
-          </Button>
-        </div>
-        
-        <ScrollArea className="flex-1">
-          {notifications.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-32 p-4">
-              <BellRing className="h-8 w-8 text-muted-foreground mb-2" />
-              <p className="text-sm text-muted-foreground">No notifications yet</p>
-            </div>
-          ) : (
-            <div className="divide-y divide-border">
-              {notifications.map((notification) => (
-                <div 
-                  key={notification.id} 
-                  className={`p-4 hover:bg-muted/50 cursor-pointer ${notification.read ? 'opacity-60' : ''}`}
-                  onClick={() => {
-                    if (!notification.read) {
-                      markAsReadMutation.mutate(notification.id);
-                    }
-                  }}
-                >
-                  <div className="flex items-start gap-3">
-                    {getNotificationIcon(notification.type)}
-                    <div>
-                      <p className="text-sm font-medium">{notification.title}</p>
-                      <p className="text-xs text-muted-foreground mt-1">{notification.content}</p>
-                      <p className="text-xs text-muted-foreground/60 mt-2">
-                        {formatTime(notification.createdAt.toString())}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </ScrollArea>
-        
-        {notifications.length > 0 && (
-          <div className="p-4 border-t border-border">
-            <Button 
-              variant="outline" 
-              className="w-full" 
-              onClick={() => markAllAsReadMutation.mutate()}
-              disabled={markAllAsReadMutation.isPending || notifications.every(n => n.read)}
-            >
-              Mark All as Read
+    <>
+      {isOpen && (
+        <div 
+          className="fixed inset-0 bg-black/20 z-[99]" 
+          onClick={closeNotifications}
+        />
+      )}
+      <div className={panelClasses}>
+        <div className="h-full flex flex-col">
+          <div className="p-4 border-b border-border flex justify-between items-center">
+            <h3 className="text-lg font-medium">Notifications</h3>
+            <Button variant="ghost" size="icon" onClick={closeNotifications}>
+              <X className="h-5 w-5" />
+              <span className="sr-only">Close</span>
             </Button>
           </div>
-        )}
+          
+          <ScrollArea className="flex-1">
+            {notifications.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-32 p-4">
+                <BellRing className="h-8 w-8 text-muted-foreground mb-2" />
+                <p className="text-sm text-muted-foreground">No notifications yet</p>
+              </div>
+            ) : (
+              <div className="divide-y divide-border">
+                {notifications.map((notification) => (
+                  <div 
+                    key={notification.id} 
+                    className={`p-4 hover:bg-muted/50 cursor-pointer ${notification.read ? 'opacity-60' : ''}`}
+                    onClick={() => {
+                      if (!notification.read) {
+                        markAsReadMutation.mutate(notification.id);
+                      }
+                    }}
+                  >
+                    <div className="flex items-start gap-3">
+                      {getNotificationIcon(notification.type)}
+                      <div>
+                        <p className="text-sm font-medium">{notification.title}</p>
+                        <p className="text-xs text-muted-foreground mt-1">{notification.content}</p>
+                        <p className="text-xs text-muted-foreground/60 mt-2">
+                          {formatTime(notification.createdAt.toString())}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </ScrollArea>
+          
+          {notifications.length > 0 && (
+            <div className="p-4 border-t border-border">
+              <Button 
+                variant="outline" 
+                className="w-full" 
+                onClick={() => markAllAsReadMutation.mutate()}
+                disabled={markAllAsReadMutation.isPending || notifications.every(n => n.read)}
+              >
+                Mark All as Read
+              </Button>
+            </div>
+          )}
+        </div>
       </div>
-    </div>
+    </>
   );
 }

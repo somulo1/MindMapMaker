@@ -1,5 +1,7 @@
 import { Request, Response } from "express";
 import { storage } from "../storage";
+import { prisma } from "../db";
+import { BadRequestError } from "../utils/errors";
 
 // Add item to cart
 export async function addToCart(req: Request, res: Response) {
@@ -114,68 +116,133 @@ export async function getUserCart(req: Request, res: Response) {
 export async function checkoutCart(req: Request, res: Response) {
   const userId = (req.user as any).id;
 
-  // Get user's cart
-  const cartItems = await storage.getUserCart(userId);
-  if (cartItems.length === 0) {
-    return res.status(400).json({ message: "Cart is empty" });
-  }
-
-  // Get user's wallet
-  const wallet = await storage.getUserWallet(userId);
-  if (!wallet) {
-    return res.status(400).json({ message: "Wallet not found" });
-  }
-
-  // Calculate total amount
-  let totalAmount = 0;
-  const orderItems = [];
-
-  for (const cartItem of cartItems) {
-    const item = await storage.getMarketplaceItem(cartItem.itemId);
-    if (!item) {
-      return res.status(400).json({ message: `Item ${cartItem.itemId} not found` });
-    }
-
-    if (item.quantity < cartItem.quantity) {
-      return res.status(400).json({ message: `Not enough items in stock for ${item.title}` });
-    }
-
-    const itemTotal = item.price * cartItem.quantity;
-    totalAmount += itemTotal;
-
-    orderItems.push({
-      itemId: item.id,
-      quantity: cartItem.quantity,
-      price: item.price
-    });
-  }
-
-  // Check if user has enough balance
-  if (wallet.balance < totalAmount) {
-    return res.status(400).json({ message: "Insufficient balance" });
-  }
-
-  // Create order
-  const order = await storage.createOrder(userId, totalAmount, orderItems);
-
-  // Update item quantities
-  for (const cartItem of cartItems) {
-    const item = await storage.getMarketplaceItem(cartItem.itemId);
-    if (item) {
-      await storage.updateMarketplaceItem(item.id, {
-        quantity: item.quantity - cartItem.quantity
+  try {
+    // Get user's cart
+    const cartItems = await storage.getUserCart(userId);
+    if (cartItems.length === 0) {
+      return res.status(400).json({ 
+        success: false, 
+        message: "Cart is empty" 
       });
     }
+
+    // Get user's wallet
+    const wallet = await storage.getUserWallet(userId);
+    if (!wallet) {
+      return res.status(400).json({ 
+        success: false, 
+        message: "Wallet not found" 
+      });
+    }
+
+    // Calculate total amount and validate items
+    let totalAmount = 0;
+    const orderItems = [];
+
+    for (const cartItem of cartItems) {
+      const item = await storage.getMarketplaceItem(cartItem.itemId);
+      if (!item) {
+        return res.status(400).json({ 
+          success: false, 
+          message: `Item ${cartItem.itemId} not found` 
+        });
+      }
+
+      if (item.quantity < cartItem.quantity) {
+        return res.status(400).json({ 
+          success: false, 
+          message: `Not enough items in stock for ${item.title}` 
+        });
+      }
+
+      const itemTotal = item.price * cartItem.quantity;
+      totalAmount += itemTotal;
+
+      // Get seller's wallet
+      const seller = await storage.getUser(item.sellerId);
+      if (!seller) {
+        return res.status(400).json({ 
+          success: false, 
+          message: `Seller not found for item ${item.title}` 
+        });
+      }
+
+      const sellerWallet = await storage.getUserWallet(seller.id);
+      if (!sellerWallet) {
+        return res.status(400).json({ 
+          success: false, 
+          message: `Seller wallet not found for item ${item.title}` 
+        });
+      }
+
+      orderItems.push({
+        itemId: item.id,
+        quantity: cartItem.quantity,
+        price: item.price,
+        sellerId: seller.id
+      });
+    }
+
+    // Check if user has enough balance
+    if (wallet.balance < totalAmount) {
+      return res.status(400).json({ 
+        success: false, 
+        message: "Insufficient balance" 
+      });
+    }
+
+    // Process each order item
+    for (const orderItem of orderItems) {
+      // Update item quantity
+      const item = await storage.getMarketplaceItem(orderItem.itemId);
+      if (item) {
+        await storage.updateMarketplaceItem(item.id, {
+          quantity: item.quantity - orderItem.quantity,
+          status: item.quantity === orderItem.quantity ? 'SOLD' : 'ACTIVE'
+        });
+      }
+
+      // Transfer money to seller
+      const sellerWallet = await storage.getUserWallet(orderItem.sellerId);
+      if (sellerWallet) {
+        await storage.updateWallet(sellerWallet.id, {
+          balance: sellerWallet.balance + (orderItem.price * orderItem.quantity)
+        });
+
+        // Create transaction record
+        await storage.createTransaction({
+          userId: userId,
+          type: 'MARKETPLACE',
+          amount: orderItem.price * orderItem.quantity,
+          description: `Purchase of ${item?.title || 'item'}`,
+          sourceWallet: wallet.id,
+          destinationWallet: sellerWallet.id,
+          status: 'COMPLETED'
+        });
+      }
+    }
+
+    // Update buyer's wallet
+    await storage.updateWallet(wallet.id, {
+      balance: wallet.balance - totalAmount
+    });
+
+    // Create order
+    const order = await storage.createOrder(userId, totalAmount, orderItems);
+
+    // Clear cart
+    await storage.clearUserCart(userId);
+
+    return res.status(200).json({
+      success: true,
+      message: "Order placed successfully",
+      order
+    });
+  } catch (error) {
+    console.error('Checkout error:', error);
+    return res.status(500).json({ 
+      success: false, 
+      message: 'Internal server error during checkout. Please try again.' 
+    });
   }
-
-  // Update wallet balance
-  await storage.updateWalletBalance(userId, wallet.balance - totalAmount);
-
-  // Clear cart
-  await storage.clearUserCart(userId);
-
-  return res.status(200).json({
-    message: "Order placed successfully",
-    order
-  });
 } 

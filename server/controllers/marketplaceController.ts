@@ -4,14 +4,18 @@ import { insertMarketplaceItemSchema } from "@shared/schema";
 
 // Get all marketplace items
 export async function getMarketplaceItems(req: Request, res: Response) {
+  const userId = (req.user as any)?.id;
   const items = await storage.getMarketplaceItems();
   
-  // Get seller info for each item
-  const itemsWithSellerInfo = await Promise.all(
+  // Get seller info and wishlist status for each item
+  const itemsWithDetails = await Promise.all(
     items.map(async (item) => {
       const seller = await storage.getUser(item.sellerId);
+      const isInWishlist = userId ? await storage.getWishlistItem(userId, item.id) !== undefined : false;
+      
       return {
         ...item,
+        isInWishlist,
         seller: seller ? {
           id: seller.id,
           username: seller.username,
@@ -22,22 +26,26 @@ export async function getMarketplaceItems(req: Request, res: Response) {
     })
   );
   
-  return res.status(200).json({ items: itemsWithSellerInfo });
+  return res.status(200).json({ items: itemsWithDetails });
 }
 
 // Get marketplace item by ID
 export async function getMarketplaceItemById(req: Request, res: Response) {
   const itemId = parseInt(req.params.id);
+  const userId = (req.user as any)?.id;
   
   const item = await storage.getMarketplaceItem(itemId);
   if (!item) {
     return res.status(404).json({ message: "Item not found" });
   }
   
-  // Get seller info
+  // Get seller info and wishlist status
   const seller = await storage.getUser(item.sellerId);
-  const itemWithSellerInfo = {
+  const isInWishlist = userId ? await storage.getWishlistItem(userId, item.id) !== undefined : false;
+  
+  const itemWithDetails = {
     ...item,
+    isInWishlist,
     seller: seller ? {
       id: seller.id,
       username: seller.username,
@@ -46,7 +54,7 @@ export async function getMarketplaceItemById(req: Request, res: Response) {
     } : null
   };
   
-  return res.status(200).json({ item: itemWithSellerInfo });
+  return res.status(200).json({ item: itemWithDetails });
 }
 
 // Get user's marketplace items

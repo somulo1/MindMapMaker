@@ -3,20 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiRequest } from '@/lib/queryClient';
 import { useAuth } from '@/context/AuthContext';
 import { useLocation } from 'wouter';
-
-interface Chama {
-  id: number;
-  name: string;
-  description?: string;
-  icon: string;
-  iconBg: string;
-  memberCount: number;
-  balance: number;
-  establishedDate: string;
-  nextMeeting?: string;
-  createdBy: number;
-  createdAt: string;
-}
+import { Chama } from '@shared/schema';
 
 interface ChamaMember {
   id: number;
@@ -43,7 +30,6 @@ interface CreateChamaData {
   description?: string;
   icon?: string;
   iconBg?: string;
-  nextMeeting?: string;
 }
 
 interface AddMemberData {
@@ -61,13 +47,13 @@ export function useChama() {
   const [, setLocation] = useLocation();
   
   // Fetch user's chamas
-  const { data: chamasData, isLoading: isLoadingChamas } = useQuery({
+  const { data: chamasData, isLoading: isLoadingChamas } = useQuery<{ chamas: Chama[] }>({
     queryKey: ['/api/chamas'],
     enabled: !!user,
   });
   
   // Fetch current chama details
-  const { data: currentChamaData, isLoading: isLoadingCurrentChama } = useQuery({
+  const { data: currentChamaData, isLoading: isLoadingCurrentChama } = useQuery<{ chama: Chama }>({
     queryKey: ['/api/chamas', currentChamaId],
     enabled: !!user && !!currentChamaId,
   });

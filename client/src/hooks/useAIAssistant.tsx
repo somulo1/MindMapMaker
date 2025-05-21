@@ -16,6 +16,20 @@ interface Conversation {
   updatedAt: string;
 }
 
+interface ConversationsResponse {
+  conversations: Conversation[];
+}
+
+interface ConversationResponse {
+  conversation: Conversation;
+}
+
+interface MessageResponse {
+  message: string;
+  response: string;
+  conversationId: number;
+}
+
 export function useAIAssistant() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
@@ -23,13 +37,13 @@ export function useAIAssistant() {
   const [error, setError] = useState<string | null>(null);
   
   // Fetch user's conversations
-  const { data: conversationsData, isLoading: isLoadingConversations } = useQuery({
+  const { data: conversationsData, isLoading: isLoadingConversations } = useQuery<ConversationsResponse>({
     queryKey: ['/api/ai/conversations'],
     enabled: !!user,
   });
   
   // Fetch current conversation
-  const { data: currentConversationData, isLoading: isLoadingCurrentConversation } = useQuery({
+  const { data: currentConversationData, isLoading: isLoadingCurrentConversation } = useQuery<ConversationResponse>({
     queryKey: ['/api/ai/conversations', currentConversationId],
     enabled: !!user && !!currentConversationId,
   });
@@ -42,9 +56,16 @@ export function useAIAssistant() {
           message,
           conversationId
         });
-        return await res.json();
-      } catch (error) {
-        throw new Error(error.message || 'Failed to send message to AI');
+        
+        const data = await res.json();
+        
+        if (!res.ok) {
+          throw new Error(data.message || 'Failed to send message');
+        }
+        
+        return data as MessageResponse;
+      } catch (error: any) {
+        throw new Error(error.message || 'Failed to send message');
       }
     },
     onSuccess: (data) => {
@@ -62,7 +83,7 @@ export function useAIAssistant() {
       setError(null);
     },
     onError: (error: Error) => {
-      setError(error.message || 'Failed to send message to AI');
+      setError(error.message || 'Failed to send message');
     },
   });
   

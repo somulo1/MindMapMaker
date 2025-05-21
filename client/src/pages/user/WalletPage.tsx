@@ -1,7 +1,6 @@
 import React, {useCallback, useEffect, useState} from 'react';
 import {useMediaQuery} from '@/hooks/use-mobile';
-import MobileLayout from '@/components/layouts/MobileLayout';
-import DesktopLayout from '@/components/layouts/DesktopLayout';
+import UserLayout from '@/components/layout/UserLayout';
 import {useWallet} from '@/hooks/useWallet';
 import {Card, CardContent, CardHeader, CardTitle} from '@/components/ui/card';
 import {Tabs, TabsContent, TabsList, TabsTrigger} from '@/components/ui/tabs';
@@ -215,18 +214,33 @@ const WalletPage: React.FC = () => {
     );
 
     return (
-        <>
-            {isMobile ? (
-                <MobileLayout title="My Wallet">
-                    {content}
-                </MobileLayout>
-            ) : (
-                <DesktopLayout title="My Wallet"
-                               subtitle="Manage your personal finances and transactions">
-                    {content}
-                </DesktopLayout>
-            )}
-        </>
+        <UserLayout title="Wallet">
+            <div className="max-w-7xl mx-auto">
+                {content}
+            </div>
+
+            {/* Deposit */}
+            <DepositDialog depositForm={depositForm}
+                           isDepositOpen={isDepositOpen}
+                           onDepositSubmit={onDepositSubmit}
+                           setIsDepositOpen={setIsDepositOpen}
+            />
+
+            {/* Withdraw */}
+            <WithdrawDialog withdrawForm={withdrawForm}
+                            isWithdrawOpen={isWithdrawOpen}
+                            onWithdrawSubmit={onWithdrawSubmit}
+                            setIsWithdrawOpen={setIsWithdrawOpen}
+            />
+
+            {/* Transfer */}
+            <TransferDialog transferForm={transferForm}
+                            isTransferOpen={isTransferOpen}
+                            onTransferSubmit={onTransferSubmit}
+                            setIsTransferOpen={setIsTransferOpen}
+                            fetchUsers={fetchUsers}
+            />
+        </UserLayout>
     );
 };
 

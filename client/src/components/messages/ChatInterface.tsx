@@ -29,7 +29,8 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
     sendDirectMessage, 
     sendChamaMessage, 
     markMessageAsRead,
-    isConnected 
+    isConnected,
+    joinChamaChat
   } = useChat();
   
   const [inputValue, setInputValue] = useState('');
@@ -65,23 +66,9 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
   const filteredMessages = isChama
     ? chamaMessages
     : messages.filter(msg => {
-        // Only show messages between current user and the selected receiver
         const isInThisConversation = 
           (msg.senderId === user?.id && msg.receiverId === receiverId) || 
           (msg.receiverId === user?.id && msg.senderId === receiverId);
-        
-          //  used to show chart logs. 
-          
-        // console.log('Message Filter:', {
-        //   messageId: msg.id,
-        //   content: msg.content,
-        //   senderId: msg.senderId,
-        //   receiverId: msg.receiverId,
-        //   currentUserId: user?.id,
-        //   targetReceiverId: receiverId,
-        //   isInThisConversation
-        // });
-        
         return isInThisConversation;
       });
   
@@ -96,6 +83,13 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
       messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
   }, [sortedMessages]);
+  
+  // Join chama chat when selected
+  useEffect(() => {
+    if (isChama && chamaId) {
+      joinChamaChat(chamaId);
+    }
+  }, [isChama, chamaId, joinChamaChat]);
   
   // Mark unread messages as read
   useEffect(() => {
@@ -156,6 +150,48 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
     return name.substring(0, 2).toUpperCase();
   };
   
+  const renderMessage = (message: any) => {
+    const isCurrentUser = message.senderId === user?.id;
+    const isSystem = message.isSystemMessage;
+
+    if (isSystem) {
+      return (
+        <div className="flex justify-center my-2">
+          <div className="bg-muted px-3 py-1 rounded-full">
+            <p className="text-xs text-muted-foreground">{message.content}</p>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className={`flex ${isCurrentUser ? 'justify-end' : 'justify-start'} mb-4`}>
+        {!isCurrentUser && (
+          <Avatar
+            src={message.sender?.profilePic || null}
+            fallback={getSenderInitials(message)}
+            size="sm"
+            className="mr-2"
+          />
+        )}
+        <div className={`max-w-[70%] ${isCurrentUser ? 'order-1' : 'order-2'}`}>
+          <div
+            className={`px-4 py-2 rounded-lg ${
+              isCurrentUser
+                ? 'bg-primary text-primary-foreground'
+                : 'bg-muted'
+            }`}
+          >
+            <p className="text-sm">{message.content}</p>
+          </div>
+          <p className="text-xs text-muted-foreground mt-1">
+            {formatDate(message.sentAt)}
+          </p>
+        </div>
+      </div>
+    );
+  };
+  
   return (
     <div className="flex flex-col h-full">
       {/* Chat Header */}
@@ -196,62 +232,11 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
           </div>
         ) : (
           <div className="space-y-4">
-            {sortedMessages.map((message, index) => {
-              const isCurrentUser = message.senderId === user?.id;
-              const senderName = getSenderDisplayName(message);
-              const showSenderInfo = isChama || 
-                (index > 0 && sortedMessages[index - 1].senderId !== message.senderId);
-              
-              // console.log('Rendering message:', {
-              //   messageId: message.id,
-              //   content: message.content,
-              //   from: senderName,
-              //   to: isCurrentUser ? recipientName : 'You',
-              //   sentAt: message.sentAt
-              // });
-
-              return (
-                <div 
-                  key={message.id} 
-                  className={`flex ${isCurrentUser ? 'justify-end' : 'justify-start'} mb-4`}
-                >
-                  <div className={`max-w-[75%] ${isCurrentUser ? 'mr-2' : 'ml-2'}`}>
-                    {/* Sender info */}
-                    {showSenderInfo && (
-                      <div className={`mb-1 ${isCurrentUser ? 'text-right' : 'text-left'}`}>
-                        <span className="text-xs font-medium text-neutral-600 dark:text-neutral-400">
-                          {senderName}s
-                        </span>
-                      </div>
-                    )}
-                    
-                    <div className={`flex items-start ${isCurrentUser ? 'flex-row' : 'flex-row-reverse'}`}>
-                      <Avatar
-                        src={message.sender?.profilePic}
-                        fallback={getSenderInitials(message)}
-                        size="sm"
-                        className={`${isCurrentUser ? 'ml-2' : 'mr-2'} mt-1`}
-                      />
-                      
-                      <div className={`rounded-lg p-3 ${
-                        isCurrentUser 
-                          ? 'bg-blue-100 dark:bg-blue-900 text-blue-900 dark:text-blue-100 rounded-tr-none' 
-                          : 'bg-green-100 dark:bg-green-900 text-green-900 dark:text-green-100 rounded-tl-none'
-                      }`}>
-                        <p className="whitespace-pre-wrap break-words">{message.content}</p>
-                        <p className={`text-xs mt-1 ${
-                          isCurrentUser 
-                            ? 'text-blue-600 dark:text-blue-300' 
-                            : 'text-green-600 dark:text-green-300'
-                        }`}>
-                          {renderMessageDate(message.sentAt)}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
+            {sortedMessages.map((message) => (
+              <div key={message.id}>
+                {renderMessage(message)}
+              </div>
+            ))}
             <div ref={messagesEndRef} />
           </div>
         )}

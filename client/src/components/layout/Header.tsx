@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { useAuth } from "@/hooks/use-auth";
+import { useAuth } from "@/context/AuthContext";
+import { useNotifications } from "@/context/NotificationContext";
 import { Bell, Menu, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -14,13 +15,12 @@ import { Link } from "wouter";
 
 interface HeaderProps {
   toggleSidebar: () => void;
-  openNotifications: () => void;
   title?: string;
-  notifications?: number;
 }
 
-export default function Header({ toggleSidebar, openNotifications, title = "Chama App", notifications = 0 }: HeaderProps) {
+export default function Header({ toggleSidebar, title = "Chama App" }: HeaderProps) {
   const { user, logoutMutation } = useAuth();
+  const { openNotifications, unreadCount } = useNotifications();
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
   const handleLogout = () => {
@@ -37,8 +37,8 @@ export default function Header({ toggleSidebar, openNotifications, title = "Cham
   };
 
   return (
-    <header className="bg-white border-b border-border z-10 shadow-sm">
-      <div className="flex items-center justify-between px-4 py-3">
+    <header className="bg-white border-b border-border shadow-sm h-16">
+      <div className="flex items-center justify-between px-4 h-full">
         <div className="flex items-center">
           <Button 
             variant="ghost" 
@@ -50,8 +50,7 @@ export default function Header({ toggleSidebar, openNotifications, title = "Cham
             <span className="sr-only">Toggle sidebar</span>
           </Button>
           <h1 className="text-xl font-semibold text-primary">
-            <span className="hidden md:inline">{title}</span>
-            <span className="md:hidden">{title}</span>
+            {title}
           </h1>
         </div>
         <div className="flex items-center space-x-4">
@@ -60,17 +59,13 @@ export default function Header({ toggleSidebar, openNotifications, title = "Cham
             size="icon" 
             className="relative" 
             onClick={openNotifications}
-            
           >
             <Bell className="h-5 w-5" />
-            {notifications > 0 && (
+            {unreadCount > 0 && (
               <span className="absolute top-0 right-0 h-5 w-5 flex items-center justify-center bg-accent text-white text-xs rounded-full">
-                {notifications}
+                {unreadCount}
               </span>
             )}
-                            <Link to="/settings">
-                  Settings
-                </Link>
             <span className="sr-only">Notifications</span>
           </Button>
           

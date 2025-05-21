@@ -22,6 +22,7 @@ import * as aiController from "./controllers/aiController";
 import * as chatController from "./controllers/chatController";
 import * as wishlistController from "./controllers/wishlistController";
 import * as cartController from "./controllers/cartController";
+import * as adminController from "./controllers/adminController";
 
 const SessionStore = MemoryStore(session);
 
@@ -81,6 +82,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return next();
     }
     res.status(401).json({ message: "Unauthorized" });
+  };
+
+  // Admin middleware
+  const isAdmin = (req: Request, res: Response, next: any) => {
+    if (req.isAuthenticated() && (req.user as any).role === "admin") {
+      return next();
+    }
+    res.status(403).json({ message: "Forbidden: Admin access required" });
   };
 
   // Error handler middleware
@@ -184,6 +193,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/messages/user", isAuthenticated, handleErrors(chatController.getUserMessages));
   app.get("/api/messages/chama/:chamaId", isAuthenticated, handleErrors(chatController.getChamaMessages));
   app.post("/api/messages", isAuthenticated, handleErrors(chatController.createMessage));
+
+  // Admin routes
+  app.get("/api/admin/users", isAdmin, handleErrors(adminController.getUsers));
+  app.get("/api/admin/users/stats", isAdmin, handleErrors(adminController.getUserStats));
+  app.get("/api/admin/users/:id/activity", isAdmin, handleErrors(adminController.getUserActivity));
+  app.put("/api/admin/users/:id", isAdmin, handleErrors(adminController.updateUser));
+  app.post("/api/admin/users/:id/toggle-block", isAdmin, handleErrors(adminController.toggleUserBlock));
+  app.delete("/api/admin/users/:id", isAdmin, handleErrors(adminController.deleteUser));
 
   // Create HTTP server
   const httpServer = createServer(app);

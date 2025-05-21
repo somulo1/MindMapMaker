@@ -72,6 +72,11 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   // Fetch chama messages when a chama is selected
   const { data: chamaMessagesData, isLoading: isLoadingChamaMessages } = useQuery({
     queryKey: ['/api/messages/chama', currentChamaId],
+    queryFn: async () => {
+      if (!currentChamaId) throw new Error('No chama selected');
+      const res = await apiRequest('GET', `/api/messages/chama/${currentChamaId}`);
+      return res.json();
+    },
     enabled: !!user && !!currentChamaId,
   });
   
@@ -274,6 +279,78 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     
     // No REST API fallback currently
   };
+  
+  // Group messages by conversation
+  const conversations = React.useMemo(() => {
+    const convoMap = new Map();
+    
+    messages.forEach(msg => {
+      if (msg.receiverId && !msg.chamaId) {
+        // Direct message
+        const key = msg.senderId === user?.id ? msg.receiverId : msg.senderId;
+        
+        if (!convoMap.has(key)) {
+          const otherUser = msg.senderId === user?.id ? msg.receiver : msg.sender;
+          const name = otherUser?.fullName || otherUser?.username || `User ${key}`;
+          
+          convoMap.set(key, {
+            id: key,
+            name,
+            type: 'user',
+            lastMessage: msg,
+            unreadCount: msg.isRead ? 0 : 1,
+            messages: [msg]
+          });
+        } else {
+          const convo = convoMap.get(key);
+          convo.messages.push(msg);
+          
+          if (new Date(msg.sentAt) > new Date(convo.lastMessage.sentAt)) {
+            convo.lastMessage = msg;
+          }
+          
+          if (!msg.isRead && msg.senderId !== user?.id) {
+            convo.unreadCount += 1;
+          }
+        }
+      } else if (msg.chamaId) {
+        // Chama message
+        const key = `chama-${msg.chamaId}`;
+        
+        if (!convoMap.has(key)) {
+          // Get chama name from receiver or use default
+          const chamaName = msg.receiver?.name || `Chama ${msg.chamaId}`;
+          
+          convoMap.set(key, {
+            id: msg.chamaId,
+            name: chamaName,
+            type: 'chama',
+            icon: 'groups',
+            iconBg: msg.receiver?.iconBg || 'primary',
+            lastMessage: msg,
+            unreadCount: msg.isRead ? 0 : 1,
+            messages: [msg],
+            isGroupChat: true
+          });
+        } else {
+          const convo = convoMap.get(key);
+          convo.messages.push(msg);
+          
+          if (new Date(msg.sentAt) > new Date(convo.lastMessage.sentAt)) {
+            convo.lastMessage = msg;
+          }
+          
+          if (!msg.isRead && msg.senderId !== user?.id) {
+            convo.unreadCount += 1;
+          }
+        }
+      }
+    });
+    
+    // Sort conversations by last message time
+    return Array.from(convoMap.values())
+      .sort((a, b) => new Date(b.lastMessage.sentAt).getTime() - new Date(a.lastMessage.sentAt).getTime());
+  }, [messages, user?.id]);
   
   const value = {
     messages,

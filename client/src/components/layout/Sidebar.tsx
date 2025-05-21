@@ -1,9 +1,9 @@
 import { useState, useEffect } from "react";
 import { Link, useLocation } from "wouter";
-import { useAuth } from "@/hooks/use-auth";
+import { useAuth } from "@/context/AuthContext";
 import { 
   Home, Wallet, School, ShoppingCart, MessageSquare, Brain, 
-  Settings, LogOut, Users, Plus, UserCog 
+  Settings, LogOut, Users, Plus, UserCog, Building2
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Chama } from "@shared/schema";
+import { MdEmojiPeople } from "react-icons/md";
 
 interface SidebarProps {
   isOpen: boolean;
@@ -19,7 +20,7 @@ interface SidebarProps {
 }
 
 export default function Sidebar({ isOpen, closeSidebar }: SidebarProps) {
-  const { user, logoutMutation } = useAuth();
+  const { user, logout } = useAuth();
   const [location] = useLocation();
   const [isMobile, setIsMobile] = useState(false);
 
@@ -28,8 +29,8 @@ export default function Sidebar({ isOpen, closeSidebar }: SidebarProps) {
     enabled: !!user
   });
 
-  const { data: wallet } = useQuery({
-    queryKey: ["/api/wallet"],
+  const { data: wallet = { balance: "0.00" } } = useQuery<{ wallet: { balance: number, currency: string } }>({
+    queryKey: ["/api/wallets/user"],
     enabled: !!user
   });
 
@@ -55,8 +56,12 @@ export default function Sidebar({ isOpen, closeSidebar }: SidebarProps) {
     }
   };
 
-  const handleLogout = () => {
-    logoutMutation.mutate();
+  const handleLogout = async () => {
+    try {
+      await logout();
+    } catch (error) {
+      console.error('Logout failed:', error);
+    }
   };
 
   const getInitials = (name: string) => {
@@ -91,9 +96,10 @@ export default function Sidebar({ isOpen, closeSidebar }: SidebarProps) {
   };
 
   const sidebarClasses = `
-    bg-white w-64 flex-shrink-0 shadow-md h-screen fixed top-0 left-0
-    md:sticky md:top-0 transition-transform duration-300 ease-in-out z-20
-    ${isOpen ? 'translate-x-0' : '-translate-x-full'}
+    bg-white w-64 h-[calc(100vh-4rem)] overflow-hidden
+    fixed md:sticky top-16 left-0 transition-transform duration-300 ease-in-out z-20
+    ${isOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
+    border-r border-border shadow-sm
   `;
 
   return (
@@ -115,7 +121,7 @@ export default function Sidebar({ isOpen, closeSidebar }: SidebarProps) {
             <div className="bg-muted rounded-md p-2">
               <p className="text-xs text-muted-foreground">Wallet Balance</p>
               <p className="font-mono text-sm font-medium">
-                KES {wallet?.balance || "0.00"}
+                KES {wallet?.wallet?.balance?.toFixed(2) || "0.00"}
               </p>
             </div>
           </div>
@@ -148,14 +154,22 @@ export default function Sidebar({ isOpen, closeSidebar }: SidebarProps) {
                   My Wallet
                 </Button>
               </Link>
-              
-              <Link to="/learning" onClick={handleLinkClick}>
+              <Link to="/Learning" onClick={handleLinkClick}>
                 <Button 
                   variant={isActive("/learning") ? "secondary" : "ghost"} 
                   className="w-full justify-start"
                 >
                   <School className="mr-2 h-4 w-4" />
-                  Learning Hub
+                  Learning
+                </Button>
+              </Link>
+              <Link to="/ai-assistant" onClick={handleLinkClick}>
+                <Button 
+                  variant={isActive("/ai-assistant") ? "secondary" : "ghost"} 
+                  className="w-full justify-start"
+                >
+                  <Brain className="mr-2 h-4 w-4" />
+                  AI Assistant
                 </Button>
               </Link>
               
@@ -169,9 +183,9 @@ export default function Sidebar({ isOpen, closeSidebar }: SidebarProps) {
                 </Button>
               </Link>
               
-              <Link to="/chat" onClick={handleLinkClick}>
+              <Link to="/messages" onClick={handleLinkClick}>
                 <Button 
-                  variant={isActive("/chat") ? "secondary" : "ghost"} 
+                  variant={isActive("/messages") ? "secondary" : "ghost"} 
                   className="w-full justify-start"
                 >
                   <MessageSquare className="mr-2 h-4 w-4" />
@@ -179,40 +193,17 @@ export default function Sidebar({ isOpen, closeSidebar }: SidebarProps) {
                   <Badge className="ml-auto bg-accent text-white">2</Badge>
                 </Button>
               </Link>
-              
-              <Link to="/assistant" onClick={handleLinkClick}>
+              <Link to="/chamas" onClick={handleLinkClick}>
                 <Button 
-                  variant={isActive("/assistant") ? "secondary" : "ghost"} 
+                  variant={isActive("/chamas") ? "secondary" : "ghost"} 
                   className="w-full justify-start"
                 >
-                  <Brain className="mr-2 h-4 w-4" />
-                  AI Assistant
+                  <Users className="mr-2 h-4 w-4" />
+                  Chamas
+                  <Badge className="ml-auto bg-accent text-white">2</Badge>
                 </Button>
               </Link>
-              
-              {/* Chama Section */}
-              <p className="px-2 pt-6 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                My Chamas
-              </p>
-              
-              {chamas.map((chama) => (
-                <Link key={chama.id} to={`/chama/${chama.id}`} onClick={handleLinkClick}>
-                  <Button 
-                    variant={isActive(`/chama/${chama.id}`) ? "secondary" : "ghost"} 
-                    className="w-full justify-start"
-                  >
-                    <Users className="mr-2 h-4 w-4" />
-                    <span className="truncate">{chama.name}</span>
-                    {chamaRoleBadge("chairperson")} {/* This would come from the member's role */}
-                  </Button>
-                </Link>
-              ))}
-              
-              <Button variant="outline" className="w-full justify-start mt-2 border-dashed">
-                <Plus className="mr-2 h-4 w-4 text-primary" />
-                Create New Chama
-              </Button>
-              
+                           
               {/* Admin Section - Only for admin users */}
               {user?.role === "admin" && (
                 <>

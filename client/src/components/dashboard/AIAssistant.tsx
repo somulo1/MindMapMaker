@@ -7,6 +7,11 @@ import { Send, ToyBrick } from 'lucide-react';
 import Avatar from '../common/Avatar';
 import { useAuth } from '@/context/AuthContext';
 
+interface Message {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
 interface MessageItemProps {
   role: 'user' | 'assistant';
   content: string;
@@ -68,68 +73,70 @@ const AIAssistant: React.FC = () => {
   };
 
   return (
-    <Card className="bg-white dark:bg-neutral-800 rounded-xl shadow-sm mb-6">
-      <CardContent className="p-5">
-        <div className="flex items-start mb-4">
-          <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center mr-3">
-            <ToyBrick className="text-primary" />
-          </div>
-          <div>
-            <h2 className="text-lg font-semibold">Financial AI Assistant</h2>
-            <p className="text-sm text-neutral-500 dark:text-neutral-400">
-              Ask me anything about personal finance or your accounts
-            </p>
-          </div>
-        </div>
-        
-        <div className="bg-neutral-50 dark:bg-neutral-900 rounded-lg p-3 mb-4 max-h-48 overflow-y-auto">
-          {messages.length === 0 && !isLoading ? (
-            <div className="text-center text-neutral-500 dark:text-neutral-400 py-8">
-              <ToyBrick className="h-8 w-8 mx-auto mb-2 text-primary/50" />
-              <p>Ask me a question about your finances.</p>
+    <div className="h-full flex flex-col">
+      <Card className="flex-1 bg-white dark:bg-neutral-800 rounded-xl shadow-sm">
+        <CardContent className="p-5 h-full flex flex-col">
+          <div className="flex items-start mb-4">
+            <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center mr-3">
+              <ToyBrick className="text-primary" />
             </div>
-          ) : isLoading && messages.length === 0 ? (
-            <div className="flex items-start mb-3">
-              <div className="w-8 h-8 rounded-full bg-neutral-200 dark:bg-neutral-700 flex items-center justify-center text-xs font-medium mr-2 flex-shrink-0">
-                AI
-              </div>
-              <div className="bg-neutral-100 dark:bg-neutral-800 rounded-lg p-2 text-sm max-w-[85%]">
-                <div className="h-4 w-32 skeleton rounded mb-2"></div>
-                <div className="h-4 w-48 skeleton rounded"></div>
-              </div>
+            <div>
+              <h2 className="text-lg font-semibold">Financial AI Assistant</h2>
+              <p className="text-sm text-neutral-500 dark:text-neutral-400">
+                Ask me anything about personal finance or your accounts
+              </p>
             </div>
-          ) : (
-            messages.map((message, index) => (
-              <MessageItem 
-                key={index}
-                role={message.role}
-                content={message.content}
-                initials={userInitials}
-              />
-            ))
-          )}
-          <div ref={messagesEndRef} />
-        </div>
-        
-        <form onSubmit={handleSubmit} className="flex items-center">
-          <Input
-            type="text"
-            placeholder="Ask about your finances..."
-            className="flex-1 border border-neutral-300 dark:border-neutral-700 dark:bg-neutral-800 rounded-l-lg py-2 px-4 focus:outline-none focus:ring-2 focus:ring-primary"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            disabled={isLoading}
-          />
-          <Button 
-            type="submit"
-            className="bg-primary hover:bg-primary-dark text-white p-2 rounded-r-lg"
-            disabled={isLoading || !input.trim()}
-          >
-            <Send className="h-5 w-5" />
-          </Button>
-        </form>
-      </CardContent>
-    </Card>
+          </div>
+          
+          <div className="flex-1 bg-neutral-50 dark:bg-neutral-900 rounded-lg p-3 mb-4 overflow-y-auto">
+            {messages.length === 0 && !isLoading ? (
+              <div className="text-center text-neutral-500 dark:text-neutral-400 py-8">
+                <ToyBrick className="h-8 w-8 mx-auto mb-2 text-primary/50" />
+                <p>Ask me a question about your finances.</p>
+              </div>
+            ) : isLoading && messages.length === 0 ? (
+              <div className="flex items-start mb-3">
+                <div className="w-8 h-8 rounded-full bg-neutral-200 dark:bg-neutral-700 flex items-center justify-center text-xs font-medium mr-2 flex-shrink-0">
+                  AI
+                </div>
+                <div className="bg-neutral-100 dark:bg-neutral-800 rounded-lg p-2 text-sm max-w-[85%]">
+                  <div className="h-4 w-32 skeleton rounded mb-2"></div>
+                  <div className="h-4 w-48 skeleton rounded"></div>
+                </div>
+              </div>
+            ) : (
+              messages.map((message: Message, index: number) => (
+                <MessageItem 
+                  key={index}
+                  role={message.role}
+                  content={message.content}
+                  initials={userInitials}
+                />
+              ))
+            )}
+            <div ref={messagesEndRef} />
+          </div>
+          
+          <form onSubmit={handleSubmit} className="flex items-center">
+            <Input
+              type="text"
+              placeholder="Ask about your finances..."
+              className="flex-1 border border-neutral-300 dark:border-neutral-700 dark:bg-neutral-800 rounded-l-lg py-2 px-4 focus:outline-none focus:ring-2 focus:ring-primary"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              disabled={isLoading}
+            />
+            <Button 
+              type="submit"
+              className="bg-primary hover:bg-primary-dark text-white p-2 rounded-r-lg"
+              disabled={isLoading || !input.trim()}
+            >
+              <Send className="h-5 w-5" />
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
+    </div>
   );
 };
 

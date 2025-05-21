@@ -21,7 +21,7 @@ export interface IStorage {
   getUserByUsername(username: string): Promise<User | undefined>;
   getUserByEmail(email: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
-  updateUser(id: number, user: Partial<User>): Promise<User | undefined>;
+  updateUser(id: number, data: Partial<User>): Promise<User | undefined>;
   
   // Chamas
   getChama(id: number): Promise<Chama | undefined>;
@@ -93,6 +93,11 @@ export interface IStorage {
   getOrder(id: number): Promise<Order | undefined>;
   getUserOrders(userId: number): Promise<Order[]>;
   getOrderItems(orderId: number): Promise<OrderItem[]>;
+
+  // Admin methods
+  getAllUsers(): Promise<User[]>;
+  deleteUser(id: number): Promise<void>;
+  getChamaMembershipsByUserId(userId: number): Promise<ChamaMember[]>;
 }
 
 export class MemStorage implements IStorage {
@@ -206,25 +211,45 @@ export class MemStorage implements IStorage {
   async createUser(insertUser: InsertUser): Promise<User> {
     const id = this.userIdCounter++;
     const now = new Date();
-    const user: User = { 
-      ...insertUser, 
-      id, 
-      role: "user", 
-      createdAt: now
+    const user: User = {
+      ...insertUser,
+      id,
+      role: "user",
+      isActive: true,
+      lastActive: now,
+      createdAt: now,
+      profilePic: null,
+      location: null,
+      phoneNumber: null
     };
     this.users.set(id, user);
-    
-    // Create a wallet for the new user
-    await this.createWallet({ userId: id, currency: "KES" });
-    
     return user;
   }
 
-  async updateUser(id: number, userData: Partial<User>): Promise<User | undefined> {
-    const user = await this.getUser(id);
+  async updateUser(id: number, data: Partial<User>): Promise<User | undefined> {
+    const user = this.users.get(id);
     if (!user) return undefined;
-    
-    const updatedUser: User = { ...user, ...userData };
+
+    const updatedUser: User = {
+      ...user,
+      ...data,
+      // Don't allow updating these fields
+      id: user.id,
+      createdAt: user.createdAt,
+      // Ensure required fields have default values
+      username: data.username || user.username,
+      email: data.email || user.email,
+      password: data.password || user.password,
+      fullName: data.fullName || user.fullName,
+      role: data.role || user.role,
+      isActive: data.isActive !== undefined ? data.isActive : user.isActive,
+      lastActive: data.lastActive || user.lastActive,
+      // Handle nullable fields
+      profilePic: data.profilePic !== undefined ? data.profilePic : user.profilePic,
+      location: data.location !== undefined ? data.location : user.location,
+      phoneNumber: data.phoneNumber !== undefined ? data.phoneNumber : user.phoneNumber
+    };
+
     this.users.set(id, updatedUser);
     return updatedUser;
   }
@@ -690,6 +715,69 @@ export class MemStorage implements IStorage {
   async getOrderItems(orderId: number): Promise<OrderItem[]> {
     return Array.from(this.orderItems.values())
       .filter(item => item.orderId === orderId);
+  }
+
+  // Admin methods
+  async getAllUsers(): Promise<User[]> {
+    return Array.from(this.users.values());
+  }
+
+  async deleteUser(id: number): Promise<void> {
+    // Delete user
+    this.users.delete(id);
+
+    // Delete associated data
+    const userWallet = Array.from(this.wallets.values()).find(w => w.userId === id);
+    if (userWallet) {
+      this.wallets.delete(userWallet.id);
+    }
+
+    // Delete user's messages
+    Array.from(this.messages.values())
+      .filter(m => m.senderId === id || m.receiverId === id)
+      .forEach(m => this.messages.delete(m.id));
+
+    // Delete user's marketplace items
+    Array.from(this.marketplaceItems.values())
+      .filter(i => i.sellerId === id)
+      .forEach(i => this.marketplaceItems.delete(i.id));
+
+    // Delete user's chama memberships
+    Array.from(this.chamaMembers.values())
+      .filter(m => m.userId === id)
+      .forEach(m => this.chamaMembers.delete(m.id));
+
+    // Delete user's AI conversations
+    Array.from(this.aiConversations.values())
+      .filter(c => c.userId === id)
+      .forEach(c => this.aiConversations.delete(c.id));
+
+    // Delete user's wishlist items
+    Array.from(this.wishlistItems.values())
+      .filter(w => w.userId === id)
+      .forEach(w => this.wishlistItems.delete(w.id));
+
+    // Delete user's cart items
+    Array.from(this.cartItems.values())
+      .filter(c => c.userId === id)
+      .forEach(c => this.cartItems.delete(c.id));
+
+    // Delete user's orders
+    Array.from(this.orders.values())
+      .filter(o => o.userId === id)
+      .forEach(o => {
+        // Delete order items first
+        Array.from(this.orderItems.values())
+          .filter(oi => oi.orderId === o.id)
+          .forEach(oi => this.orderItems.delete(oi.id));
+        // Then delete the order
+        this.orders.delete(o.id);
+      });
+  }
+
+  async getChamaMembershipsByUserId(userId: number): Promise<ChamaMember[]> {
+    return Array.from(this.chamaMembers.values())
+      .filter(member => member.userId === userId);
   }
 }
 

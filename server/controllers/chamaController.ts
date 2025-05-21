@@ -20,7 +20,24 @@ export async function createChama(req: Request, res: Response) {
     createdBy: userId
   });
   
+  // Create the chama
   const newChama = await storage.createChama(validatedData);
+  
+  // Add creator as chairperson
+  await storage.addChamaMember({
+    chamaId: newChama.id,
+    userId: userId,
+    role: "chairperson",
+    isActive: true
+  });
+  
+  // Create chat group by creating initial system message
+  await storage.createMessage({
+    senderId: userId,
+    chamaId: newChama.id,
+    content: `Welcome to ${newChama.name}! 🎉\n\nThis is your chama's group chat. All members can communicate here about chama activities, meetings, and contributions.\n\nGroup Name: ${newChama.name}\nCreated by: ${(req.user as any).fullName}`,
+    isSystemMessage: true
+  });
   
   // Return the chama object in the expected structure
   return res.status(201).json({

@@ -2,24 +2,35 @@ import { X, BellRing, AlertCircle, CreditCard, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import { Notification } from "@shared/schema";
 import { queryClient } from "@/lib/queryClient";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { formatDistanceToNow } from "date-fns";
+import { useNotifications } from "@/context/NotificationContext";
+import { useEffect, useRef } from "react";
 
-interface NotificationPanelProps {
-  isOpen: boolean;
-  closeNotifications: () => void;
-}
-
-export default function NotificationPanel({ isOpen, closeNotifications }: NotificationPanelProps) {
+export default function NotificationPanel() {
   const { toast } = useToast();
-  
-  const { data: notifications = [] } = useQuery<Notification[]>({
-    queryKey: ["/api/notifications"],
-  });
+  const { isOpen, closeNotifications, notifications = [] } = useNotifications();
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (panelRef.current && !panelRef.current.contains(event.target as Node)) {
+        closeNotifications();
+      }
+    };
+
+    if (isOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isOpen, closeNotifications]);
 
   const markAsReadMutation = useMutation({
     mutationFn: async (id: number) => {
@@ -81,7 +92,7 @@ export default function NotificationPanel({ isOpen, closeNotifications }: Notifi
   `;
 
   return (
-    <div className={panelClasses}>
+    <div className={panelClasses} ref={panelRef}>
       <div className="h-full flex flex-col">
         <div className="p-4 border-b border-border flex justify-between items-center">
           <h3 className="text-lg font-medium">Notifications</h3>
@@ -115,7 +126,7 @@ export default function NotificationPanel({ isOpen, closeNotifications }: Notifi
                       <p className="text-sm font-medium">{notification.title}</p>
                       <p className="text-xs text-muted-foreground mt-1">{notification.content}</p>
                       <p className="text-xs text-muted-foreground/60 mt-2">
-                        {formatTime(notification.createdAt.toString())}
+                        {notification.createdAt ? formatTime(notification.createdAt.toString()) : 'Unknown time'}
                       </p>
                     </div>
                   </div>

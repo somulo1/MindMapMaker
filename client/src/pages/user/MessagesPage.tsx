@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useMediaQuery } from '@/hooks/use-mobile';
-import MobileLayout from '@/components/layouts/MobileLayout';
-import DesktopLayout from '@/components/layouts/DesktopLayout';
+import UserLayout from '@/components/layout/UserLayout';
 import { Card } from '@/components/ui/card';
 import ConversationList from '@/components/messages/ConversationList';
 import ChatInterface from '@/components/messages/ChatInterface';
@@ -104,67 +103,55 @@ const MessagesPage: React.FC = () => {
     setSelectedName(name);
   };
   
-  const content = (
-    <div className={`${isMobile ? 'p-0' : ''} h-full flex flex-col md:flex-row`}>
-      {/* Conversation list - hidden in mobile when a chat is selected */}
-      <div 
-        className={`${isMobile && (selectedReceiverId || selectedChamaId) ? 'hidden' : 'block'} 
-                   md:block md:w-1/3 border-r border-neutral-200 dark:border-neutral-700`}
-      >
-        <div className="h-full">
-          <ConversationList 
-            conversations={conversations} 
-            onSelectConversation={handleSelectConversation}
-            selectedId={selectedReceiverId || selectedChamaId}
-          />
+  return (
+    <UserLayout title="Messages">
+      <div className={`${isMobile ? 'p-0' : ''} h-full flex flex-col md:flex-row`}>
+        {/* Conversation list - hidden in mobile when a chat is selected */}
+        <div 
+          className={`${isMobile && (selectedReceiverId || selectedChamaId) ? 'hidden' : 'block'} 
+                     md:block md:w-1/3 border-r border-neutral-200 dark:border-neutral-700`}
+        >
+          <div className="h-full">
+            <ConversationList 
+              conversations={conversations} 
+              onSelectConversation={handleSelectConversation}
+              selectedId={selectedReceiverId || selectedChamaId}
+            />
+          </div>
+        </div>
+        
+        {/* Chat interface - fullscreen in mobile when selected */}
+        <div 
+          className={`${isMobile && !(selectedReceiverId || selectedChamaId) ? 'hidden' : 'block'} 
+                     flex-1 h-full`}
+        >
+          {(selectedReceiverId || selectedChamaId) ? (
+            <ChatInterface 
+              receiverId={selectedReceiverId} 
+              isChama={!!selectedChamaId}
+              chamaId={selectedChamaId}
+              recipientName={selectedName}
+              onBack={isMobile ? () => {
+                setSelectedReceiverId(null);
+                setSelectedChamaId(null);
+              } : undefined}
+            />
+          ) : (
+            <div className="h-full flex items-center justify-center p-6 bg-neutral-50 dark:bg-neutral-900">
+              <div className="text-center">
+                <div className="rounded-full bg-primary/10 w-20 h-20 flex items-center justify-center mx-auto mb-4">
+                  <span className="material-icons text-primary text-3xl">chat</span>
+                </div>
+                <h3 className="text-lg font-medium mb-2">Select a conversation</h3>
+                <p className="text-neutral-500 dark:text-neutral-400 max-w-md">
+                  Choose a contact or chama from the list to start messaging
+                </p>
+              </div>
+            </div>
+          )}
         </div>
       </div>
-      
-      {/* Chat interface - fullscreen in mobile when selected */}
-      <div 
-        className={`${isMobile && !(selectedReceiverId || selectedChamaId) ? 'hidden' : 'block'} 
-                   flex-1 h-full`}
-      >
-        {(selectedReceiverId || selectedChamaId) ? (
-          <ChatInterface 
-            receiverId={selectedReceiverId} 
-            isChama={!!selectedChamaId}
-            chamaId={selectedChamaId}
-            recipientName={selectedName}
-            onBack={isMobile ? () => {
-              setSelectedReceiverId(null);
-              setSelectedChamaId(null);
-            } : undefined}
-          />
-        ) : (
-          <div className="h-full flex items-center justify-center p-6 bg-neutral-50 dark:bg-neutral-900">
-            <div className="text-center">
-              <div className="rounded-full bg-primary/10 w-20 h-20 flex items-center justify-center mx-auto mb-4">
-                <span className="material-icons text-primary text-3xl">chat</span>
-              </div>
-              <h3 className="text-lg font-medium mb-2">Select a conversation</h3>
-              <p className="text-neutral-500 dark:text-neutral-400 max-w-md">
-                Choose a contact or chama from the list to start messaging
-              </p>
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-
-  return (
-    <>
-      {isMobile ? (
-        <MobileLayout title="Messages" showHeader={!(selectedReceiverId || selectedChamaId)}>
-          {content}
-        </MobileLayout>
-      ) : (
-        <DesktopLayout title="Messages" subtitle="Chat with your contacts and chama members">
-          {content}
-        </DesktopLayout>
-      )}
-    </>
+    </UserLayout>
   );
 };
 

@@ -1,13 +1,12 @@
 import React, { useState } from 'react';
 import { useMediaQuery } from '@/hooks/use-mobile';
-import MobileLayout from '@/components/layouts/MobileLayout';
-import DesktopLayout from '@/components/layouts/DesktopLayout';
+import UserLayout from '@/components/layout/UserLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useQuery } from '@tanstack/react-query';
 import MarketplaceItem from '@/components/marketplace/MarketplaceItem';
-import { Plus, Search } from 'lucide-react';
+import { Plus, Search, ShoppingCart, Heart } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
@@ -18,6 +17,9 @@ import { apiRequest } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
 import { useQueryClient } from '@tanstack/react-query';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Link } from 'wouter';
+import { Badge } from "@/components/ui/badge";
+import { useAuth } from '@/context/AuthContext';
 
 // Create Item Schema
 const createItemSchema = z.object({
@@ -29,18 +31,74 @@ const createItemSchema = z.object({
   chamaId: z.coerce.number().optional(),
 });
 
+interface CartData {
+  items: Array<{
+    id: number;
+    title: string;
+    price: number;
+    quantity: number;
+  }>;
+}
+
+interface WishlistData {
+  items: Array<{
+    id: number;
+    title: string;
+  }>;
+}
+
+interface MarketplaceItem {
+  id: number;
+  title: string;
+  description?: string;
+  price: number;
+  currency: string;
+  imageUrl?: string;
+  category: string;
+  seller: {
+    id: number;
+    username: string;
+    fullName: string;
+    profilePic?: string;
+  };
+}
+
+interface MarketplaceData {
+  items: MarketplaceItem[];
+}
+
 const MarketplacePage: React.FC = () => {
   const isMobile = useMediaQuery('(max-width: 768px)');
   const [searchTerm, setSearchTerm] = useState('');
   const [isAddItemOpen, setIsAddItemOpen] = useState(false);
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const { user } = useAuth();
   
-  const { data: marketplaceData, isLoading } = useQuery({
+  // Handle API error properly
+  const handleError = (error: unknown) => {
+    const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+    toast({
+      variant: "destructive",
+      title: "Error",
+      description: errorMessage,
+    });
+  };
+  
+  // Fetch marketplace items with proper typing
+  const { data: marketplaceData, isLoading, error: marketplaceError } = useQuery<MarketplaceData>({
     queryKey: ['/api/marketplace'],
+    queryFn: async () => {
+      const response = await apiRequest('GET', '/api/marketplace');
+      return response.json();
+    },
   });
   
   const items = marketplaceData?.items || [];
+  
+  if (marketplaceError) {
+    handleError(marketplaceError);
+  }
   
   // Create item form
   const createItemForm = useForm<z.infer<typeof createItemSchema>>({
@@ -74,100 +132,209 @@ const MarketplacePage: React.FC = () => {
       toast({
         variant: "destructive",
         title: "Failed to create item",
-        description: error.message || "An error occurred while creating the item.",
+        description: error instanceof Error ? error.message : "An error occurred while creating the item.",
       });
     }
   };
   
-  // Filter items based on search term
-  const filteredItems = items.filter(item => 
-    item.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (item.description && item.description.toLowerCase().includes(searchTerm.toLowerCase())) ||
-    (item.seller.fullName && item.seller.fullName.toLowerCase().includes(searchTerm.toLowerCase()))
-  );
+  // Fetch cart count with proper typing
+  const { data: cartData } = useQuery<CartData>({
+    queryKey: ['/api/cart'],
+    queryFn: async () => {
+      const response = await apiRequest('GET', '/api/cart');
+      return response.json();
+    },
+  });
+
+  // Fetch wishlist count with proper typing
+  const { data: wishlistData } = useQuery<WishlistData>({
+    queryKey: ['/api/wishlist'],
+    queryFn: async () => {
+      const response = await apiRequest('GET', '/api/wishlist');
+      return response.json();
+    },
+  });
+
+  const cartCount = cartData?.items?.length || 0;
+  const wishlistCount = wishlistData?.items?.length || 0;
+  
+  // Filter items with proper typing
+  const filteredItems = (items: MarketplaceItem[], category?: string, isMyListing: boolean = false) => {
+    return items.filter(item => {
+      const matchesSearch = 
+        item.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        item.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (item.seller.fullName && item.seller.fullName.toLowerCase().includes(searchTerm.toLowerCase()));
+
+      if (isMyListing) {
+        return matchesSearch && item.seller.id === user?.id;
+      }
+
+      if (category === 'products') {
+        return matchesSearch && item.category && !['services'].includes(item.category.toLowerCase());
+      }
+
+      if (category === 'services') {
+        return matchesSearch && item.category && item.category.toLowerCase() === 'services';
+      }
+
+      return matchesSearch;
+    });
+  };
+
+  const getCategoryLabel = (category: string | undefined) => {
+    if (!category) return 'Other';
+    const categoryMap: Record<string, string> = {
+      'agriculture': 'Agriculture',
+      'crafts': 'Crafts & Handmade',
+      'food': 'Food & Beverages',
+      'services': 'Services',
+      'clothing': 'Clothing & Accessories',
+      'other': 'Other'
+    };
+    return categoryMap[category.toLowerCase()] || category;
+  };
+
+  const sortedItems = (items: MarketplaceItem[]) => {
+    return [...items].sort((a, b) => a.title.localeCompare(b.title));
+  };
+
+  const renderItemGrid = (items: MarketplaceItem[]) => {
+    if (items.length === 0) {
+      return (
+        <div className="bg-neutral-50 dark:bg-neutral-900 rounded-lg py-12 text-center">
+          <p className="text-neutral-500 dark:text-neutral-400 text-lg">
+            {searchTerm 
+              ? "No items match your search criteria." 
+              : "No items available in this category."}
+          </p>
+          {items.length === 0 && user && (
+            <Button size="lg" className="mt-6" onClick={() => setIsAddItemOpen(true)}>
+              <Plus className="h-5 w-5 mr-2" /> List New Item
+            </Button>
+          )}
+        </div>
+      );
+    }
+
+    return (
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+        {items.map((item) => (
+          <MarketplaceItem 
+            key={item.id} 
+            item={item}
+          />
+        ))}
+      </div>
+    );
+  };
   
   const content = (
-    <div className={isMobile ? "p-4" : "" }>
-      {/* Header with search and add button */}
-      <div className="flex flex-col md:flex-row items-center justify-between mb-6 gap-4">
-        <div className="relative w-full md:w-72">
+    <div className="p-4 md:p-6">
+      {/* Header with search and buttons */}
+      <div className="flex flex-col space-y-4 md:flex-row md:items-center md:justify-between md:space-y-0 md:space-x-4 mb-6">
+        <div className="relative w-full md:w-96">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-neutral-500 h-4 w-4" />
           <Input
             placeholder="Search marketplace..."
-            className="pl-10"
+            className="pl-10 h-11"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
           />
         </div>
         
-        <Button onClick={() => setIsAddItemOpen(true)}>
-          <Plus className="mr-2 h-4 w-4" /> List New Item
-        </Button>
+        <div className="flex flex-row items-center justify-between md:justify-end gap-3 w-full md:w-auto">
+          <Button variant="outline" size="lg" asChild className="flex-1 md:flex-none h-11">
+            <Link to="/marketplace/wishlist" className="flex items-center justify-center gap-2">
+              <Heart className="h-5 w-5" />
+              <span className="hidden sm:inline">Wishlist</span>
+              {wishlistCount > 0 && (
+                <Badge variant="secondary" className="ml-1">
+                  {wishlistCount}
+                </Badge>
+              )}
+            </Link>
+          </Button>
+
+          <Button variant="outline" size="lg" asChild className="flex-1 md:flex-none h-11">
+            <Link to="/marketplace/cart" className="flex items-center justify-center gap-2">
+              <ShoppingCart className="h-5 w-5" />
+              <span className="hidden sm:inline">Cart</span>
+              {cartCount > 0 && (
+                <Badge variant="secondary" className="ml-1">
+                  {cartCount}
+                </Badge>
+              )}
+            </Link>
+          </Button>
+
+          <Button size="lg" onClick={() => setIsAddItemOpen(true)} className="flex-1 md:flex-none h-11">
+            <Plus className="h-5 w-5 md:mr-2" />
+            <span className="hidden md:inline">List New Item</span>
+          </Button>
+        </div>
       </div>
       
       {/* Marketplace tabs and items */}
-      <Card>
+      <Card className="border-0 shadow-sm">
         <CardHeader className="pb-2">
-          <CardTitle className="text-lg">Marketplace Items</CardTitle>
+          <CardTitle className="text-xl font-semibold">Marketplace Items</CardTitle>
         </CardHeader>
         <CardContent>
           <Tabs defaultValue="all" className="w-full">
-            <TabsList className="grid grid-cols-4 mb-4">
-              <TabsTrigger value="all">All</TabsTrigger>
-              <TabsTrigger value="products">Products</TabsTrigger>
-              <TabsTrigger value="services">Services</TabsTrigger>
-              <TabsTrigger value="my-listings">My Listings</TabsTrigger>
+            <TabsList className="grid w-full grid-cols-2 md:grid-cols-4 gap-1 mb-6">
+              <TabsTrigger value="all" className="py-2.5">All</TabsTrigger>
+              <TabsTrigger value="products" className="py-2.5">Products</TabsTrigger>
+              <TabsTrigger value="services" className="py-2.5">Services</TabsTrigger>
+              <TabsTrigger value="my-listings" className="py-2.5">My Listings</TabsTrigger>
             </TabsList>
             
             <TabsContent value="all">
               {isLoading ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                   {[1, 2, 3, 4, 5, 6].map((n) => (
                     <div key={n} className="bg-white dark:bg-neutral-800 rounded-xl shadow-sm overflow-hidden h-64 skeleton"></div>
                   ))}
                 </div>
-              ) : filteredItems.length > 0 ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                  {filteredItems.map((item) => (
-                    <MarketplaceItem key={item.id} item={item} />
-                  ))}
-                </div>
               ) : (
-                <div className="bg-neutral-50 dark:bg-neutral-900 rounded-lg py-10 text-center">
-                  <p className="text-neutral-500 dark:text-neutral-400">
-                    {searchTerm 
-                      ? "No items match your search criteria." 
-                      : "No marketplace items available at the moment."}
-                  </p>
-                </div>
+                renderItemGrid(sortedItems(filteredItems(items)))
               )}
             </TabsContent>
             
             <TabsContent value="products">
-              <div className="bg-neutral-50 dark:bg-neutral-900 rounded-lg py-10 text-center">
-                <p className="text-neutral-500 dark:text-neutral-400">
-                  Product category filter coming soon.
-                </p>
-              </div>
+              {isLoading ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                  {[1, 2, 3].map((n) => (
+                    <div key={n} className="bg-white dark:bg-neutral-800 rounded-xl shadow-sm overflow-hidden h-64 skeleton"></div>
+                  ))}
+                </div>
+              ) : (
+                renderItemGrid(sortedItems(filteredItems(items, 'products')))
+              )}
             </TabsContent>
             
             <TabsContent value="services">
-              <div className="bg-neutral-50 dark:bg-neutral-900 rounded-lg py-10 text-center">
-                <p className="text-neutral-500 dark:text-neutral-400">
-                  Service category filter coming soon.
-                </p>
-              </div>
+              {isLoading ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                  {[1, 2, 3].map((n) => (
+                    <div key={n} className="bg-white dark:bg-neutral-800 rounded-xl shadow-sm overflow-hidden h-64 skeleton"></div>
+                  ))}
+                </div>
+              ) : (
+                renderItemGrid(sortedItems(filteredItems(items, 'services')))
+              )}
             </TabsContent>
             
             <TabsContent value="my-listings">
-              <div className="bg-neutral-50 dark:bg-neutral-900 rounded-lg py-10 text-center">
-                <p className="text-neutral-500 dark:text-neutral-400">
-                  Your listings will appear here.
-                </p>
-                <Button className="mt-4" onClick={() => setIsAddItemOpen(true)}>
-                  <Plus className="mr-2 h-4 w-4" /> List New Item
-                </Button>
-              </div>
+              {isLoading ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                  {[1, 2, 3].map((n) => (
+                    <div key={n} className="bg-white dark:bg-neutral-800 rounded-xl shadow-sm overflow-hidden h-64 skeleton"></div>
+                  ))}
+                </div>
+              ) : (
+                renderItemGrid(sortedItems(filteredItems(items, undefined, true)))
+              )}
             </TabsContent>
           </Tabs>
         </CardContent>
@@ -175,24 +342,24 @@ const MarketplacePage: React.FC = () => {
       
       {/* Create Item Dialog */}
       <Dialog open={isAddItemOpen} onOpenChange={setIsAddItemOpen}>
-        <DialogContent>
+        <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
-            <DialogTitle>List Item for Sale</DialogTitle>
-            <DialogDescription>
+            <DialogTitle className="text-xl">List Item for Sale</DialogTitle>
+            <DialogDescription className="text-neutral-500">
               Add an item or service to the marketplace.
             </DialogDescription>
           </DialogHeader>
           
           <Form {...createItemForm}>
-            <form onSubmit={createItemForm.handleSubmit(onCreateItemSubmit)} className="space-y-4">
+            <form onSubmit={createItemForm.handleSubmit(onCreateItemSubmit)} className="space-y-5">
               <FormField
                 control={createItemForm.control}
                 name="title"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Title</FormLabel>
+                    <FormLabel className="text-base">Title</FormLabel>
                     <FormControl>
-                      <Input placeholder="e.g., Fresh Organic Vegetables" {...field} />
+                      <Input placeholder="e.g., Fresh Organic Vegetables" className="h-11" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -204,24 +371,24 @@ const MarketplacePage: React.FC = () => {
                 name="description"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Description (Optional)</FormLabel>
+                    <FormLabel className="text-base">Description (Optional)</FormLabel>
                     <FormControl>
-                      <Input placeholder="e.g., Fresh harvest from my farm" {...field} />
+                      <Input placeholder="e.g., Fresh harvest from my farm" className="h-11" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
               />
               
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
                 <FormField
                   control={createItemForm.control}
                   name="price"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Price (KES)</FormLabel>
+                      <FormLabel className="text-base">Price (KES)</FormLabel>
                       <FormControl>
-                        <Input type="number" min="0" step="any" {...field} />
+                        <Input type="number" min="0" step="any" className="h-11" {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -233,13 +400,13 @@ const MarketplacePage: React.FC = () => {
                   name="category"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Category (Optional)</FormLabel>
+                      <FormLabel className="text-base">Category (Optional)</FormLabel>
                       <Select 
                         onValueChange={field.onChange} 
                         defaultValue={field.value}
                       >
                         <FormControl>
-                          <SelectTrigger>
+                          <SelectTrigger className="h-11">
                             <SelectValue placeholder="Select a category" />
                           </SelectTrigger>
                         </FormControl>
@@ -263,9 +430,9 @@ const MarketplacePage: React.FC = () => {
                 name="imageUrl"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Image URL (Optional)</FormLabel>
+                    <FormLabel className="text-base">Image URL (Optional)</FormLabel>
                     <FormControl>
-                      <Input placeholder="https://example.com/image.jpg" {...field} />
+                      <Input placeholder="https://example.com/image.jpg" className="h-11" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -277,9 +444,9 @@ const MarketplacePage: React.FC = () => {
                 name="chamaId"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Chama ID (Optional)</FormLabel>
+                    <FormLabel className="text-base">Chama ID (Optional)</FormLabel>
                     <FormControl>
-                      <Input type="number" min="1" placeholder="Associate with a chama" {...field} />
+                      <Input type="number" min="1" placeholder="Associate with a chama" className="h-11" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -287,7 +454,7 @@ const MarketplacePage: React.FC = () => {
               />
               
               <DialogFooter>
-                <Button type="submit" disabled={createItemForm.formState.isSubmitting}>
+                <Button type="submit" size="lg" disabled={createItemForm.formState.isSubmitting} className="w-full sm:w-auto">
                   {createItemForm.formState.isSubmitting ? "Creating..." : "List Item"}
                 </Button>
               </DialogFooter>
@@ -299,17 +466,11 @@ const MarketplacePage: React.FC = () => {
   );
 
   return (
-    <>
-      {isMobile ? (
-        <MobileLayout title="Marketplace">
-          {content}
-        </MobileLayout>
-      ) : (
-        <DesktopLayout title="Marketplace" subtitle="Buy and sell products and services">
-          {content}
-        </DesktopLayout>
-      )}
-    </>
+    <UserLayout title="Marketplace">
+      <div className="max-w-7xl mx-auto">
+        {content}
+      </div>
+    </UserLayout>
   );
 };
 

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import AdminLayout from "@/components/layout/AdminLayout";
 import { 
   Table, 
@@ -62,17 +62,82 @@ import {
 } from "lucide-react";
 import { User as UserType } from "@shared/schema";
 import { format } from "date-fns";
+import { useToast } from "@/hooks/use-toast";
+
+interface UserActivity {
+  transactions: Array<{
+    id: number;
+    type: string;
+    amount: number;
+    createdAt: string;
+  }>;
+  messages: Array<{
+    id: number;
+    content: string;
+    sentAt: string;
+  }>;
+  chamas: Array<{
+    id: number;
+    name: string;
+    role: string;
+  }>;
+}
 
 export default function AdminUsers() {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedUser, setSelectedUser] = useState<UserType | null>(null);
   const [viewUserDialogOpen, setViewUserDialogOpen] = useState(false);
   const [blockUserDialogOpen, setBlockUserDialogOpen] = useState(false);
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
   
-  // Query for users
-  const { data: users = [], isLoading } = useQuery<UserType[]>({
+  // Query for users and stats
+  const { data: usersData, isLoading: isLoadingUsers } = useQuery<{ users: UserType[] }>({
     queryKey: ["/api/admin/users"],
   });
+
+  const { data: statsData, isLoading: isLoadingStats } = useQuery<{
+    total: number;
+    active: number;
+    admins: number;
+    newLastWeek: number;
+  }>({
+    queryKey: ["/api/admin/users/stats"],
+  });
+
+  // Query for selected user's activity
+  const { data: activityData, isLoading: isLoadingActivity } = useQuery<UserActivity>({
+    queryKey: ["/api/admin/users", selectedUser?.id, "activity"],
+    enabled: !!selectedUser,
+  });
+  
+  // Mutations
+  const blockUserMutation = useMutation({
+    mutationFn: async (userId: number) => {
+      const response = await fetch(`/api/admin/users/${userId}/toggle-block`, {
+        method: "POST",
+      });
+      if (!response.ok) throw new Error("Failed to block/unblock user");
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
+      toast({
+        title: "Success",
+        description: "User status updated successfully",
+      });
+      setBlockUserDialogOpen(false);
+    },
+    onError: (error) => {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const users = usersData?.users || [];
   
   // Filter users based on search term
   const filteredUsers = users.filter(user => 
@@ -103,9 +168,9 @@ export default function AdminUsers() {
   };
 
   const confirmBlockUser = () => {
-    // Here you'd call your API to block the user
-    console.log(`Blocking user: ${selectedUser?.id}`);
-    setBlockUserDialogOpen(false);
+    if (selectedUser) {
+      blockUserMutation.mutate(selectedUser.id);
+    }
   };
 
   return (
@@ -141,8 +206,12 @@ export default function AdminUsers() {
             <Users className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{users.length}</div>
-            <p className="text-xs text-muted-foreground">+12% from last month</p>
+            <div className="text-2xl font-bold">
+              {isLoadingStats ? "..." : statsData?.total}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              +{statsData?.newLastWeek || 0} from last week
+            </p>
           </CardContent>
         </Card>
         
@@ -152,8 +221,12 @@ export default function AdminUsers() {
             <UserCheck className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">1,048</div>
-            <p className="text-xs text-muted-foreground">+5% from last month</p>
+            <div className="text-2xl font-bold">
+              {isLoadingStats ? "..." : statsData?.active}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {Math.round((statsData?.active || 0) / (statsData?.total || 1) * 100)}% of total users
+            </p>
           </CardContent>
         </Card>
         
@@ -163,7 +236,9 @@ export default function AdminUsers() {
             <User className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">45</div>
+            <div className="text-2xl font-bold">
+              {isLoadingStats ? "..." : statsData?.newLastWeek}
+            </div>
             <p className="text-xs text-muted-foreground">Last 7 days</p>
           </CardContent>
         </Card>
@@ -174,8 +249,10 @@ export default function AdminUsers() {
             <Shield className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">5</div>
-            <p className="text-xs text-muted-foreground">No change</p>
+            <div className="text-2xl font-bold">
+              {isLoadingStats ? "..." : statsData?.admins}
+            </div>
+            <p className="text-xs text-muted-foreground">System administrators</p>
           </CardContent>
         </Card>
       </div>
@@ -190,20 +267,24 @@ export default function AdminUsers() {
                 <TableHead>Email</TableHead>
                 <TableHead>Phone</TableHead>
                 <TableHead>Role</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Last Active</TableHead>
                 <TableHead>Joined</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {isLoading ? (
+              {isLoadingUsers ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="h-24 text-center">
-                    Loading users...
+                  <TableCell colSpan={9} className="h-24 text-center">
+                    <div className="flex items-center justify-center">
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                    </div>
                   </TableCell>
                 </TableRow>
               ) : filteredUsers.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="h-24 text-center">
+                  <TableCell colSpan={9} className="h-24 text-center">
                     No users found
                   </TableCell>
                 </TableRow>
@@ -213,8 +294,16 @@ export default function AdminUsers() {
                     <TableCell className="font-medium">{user.fullName}</TableCell>
                     <TableCell>{user.username}</TableCell>
                     <TableCell>{user.email}</TableCell>
-                    <TableCell>{user.phoneNumber}</TableCell>
+                    <TableCell>{user.phoneNumber || "N/A"}</TableCell>
                     <TableCell>{userRoleBadge(user.role || "user")}</TableCell>
+                    <TableCell>
+                      <Badge variant={user.isActive ? "default" : "destructive"}>
+                        {user.isActive ? "Active" : "Blocked"}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      {user.lastActive ? format(new Date(user.lastActive), "MMM d, yyyy") : "Never"}
+                    </TableCell>
                     <TableCell>{format(new Date(user.createdAt), "MMM d, yyyy")}</TableCell>
                     <TableCell className="text-right">
                       <DropdownMenu>
@@ -241,8 +330,17 @@ export default function AdminUsers() {
                             className="text-destructive" 
                             onClick={() => handleBlockUser(user)}
                           >
-                            <UserX className="mr-2 h-4 w-4" />
-                            Block User
+                            {user.isActive ? (
+                              <>
+                                <UserX className="mr-2 h-4 w-4" />
+                                Block User
+                              </>
+                            ) : (
+                              <>
+                                <UserCheck className="mr-2 h-4 w-4" />
+                                Unblock User
+                              </>
+                            )}
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
@@ -253,114 +351,127 @@ export default function AdminUsers() {
             </TableBody>
           </Table>
         </CardContent>
-        
-        <CardFooter className="border-t px-6 py-3">
-          <div className="text-sm text-muted-foreground">
-            Showing {filteredUsers.length} of {users.length} users
-          </div>
-        </CardFooter>
       </Card>
-      
+
       {/* View User Details Dialog */}
       <Dialog open={viewUserDialogOpen} onOpenChange={setViewUserDialogOpen}>
-        <DialogContent className="sm:max-w-[500px]">
+        <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
             <DialogTitle>User Details</DialogTitle>
             <DialogDescription>
               Detailed information about the selected user.
             </DialogDescription>
           </DialogHeader>
-          
           {selectedUser && (
-            <div className="space-y-4">
-              <div className="flex justify-center pb-4">
-                <div className="w-24 h-24 rounded-full bg-muted flex items-center justify-center text-3xl font-medium">
-                  {selectedUser.fullName?.substring(0, 2).toUpperCase() || "U"}
+            <div className="grid gap-4 py-4">
+              <div className="space-y-2">
+                <h4 className="font-medium">Personal Information</h4>
+                <div className="grid grid-cols-2 gap-2 text-sm">
+                  <div className="text-muted-foreground">Full Name</div>
+                  <div>{selectedUser.fullName}</div>
+                  <div className="text-muted-foreground">Username</div>
+                  <div>{selectedUser.username}</div>
+                  <div className="text-muted-foreground">Email</div>
+                  <div>{selectedUser.email}</div>
+                  <div className="text-muted-foreground">Phone</div>
+                  <div>{selectedUser.phoneNumber || "N/A"}</div>
+                  <div className="text-muted-foreground">Location</div>
+                  <div>{selectedUser.location || "N/A"}</div>
                 </div>
               </div>
-              
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground">Full Name</p>
-                  <p>{selectedUser.fullName}</p>
-                </div>
-                
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground">Username</p>
-                  <p>{selectedUser.username}</p>
-                </div>
-                
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground">Email</p>
-                  <p>{selectedUser.email}</p>
-                </div>
-                
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground">Phone</p>
-                  <p>{selectedUser.phoneNumber || "Not provided"}</p>
-                </div>
-                
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground">Role</p>
-                  <p>{userRoleBadge(selectedUser.role || "user")}</p>
-                </div>
-                
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground">Joined Date</p>
-                  <p>{format(new Date(selectedUser.createdAt), "MMM d, yyyy")}</p>
+              <div className="space-y-2">
+                <h4 className="font-medium">Account Information</h4>
+                <div className="grid grid-cols-2 gap-2 text-sm">
+                  <div className="text-muted-foreground">Role</div>
+                  <div>{userRoleBadge(selectedUser.role || "user")}</div>
+                  <div className="text-muted-foreground">Status</div>
+                  <div>
+                    <Badge variant={selectedUser.isActive ? "default" : "destructive"}>
+                      {selectedUser.isActive ? "Active" : "Blocked"}
+                    </Badge>
+                  </div>
+                  <div className="text-muted-foreground">Last Active</div>
+                  <div>
+                    {selectedUser.lastActive 
+                      ? format(new Date(selectedUser.lastActive), "PPP")
+                      : "Never"}
+                  </div>
+                  <div className="text-muted-foreground">Joined</div>
+                  <div>{format(new Date(selectedUser.createdAt), "PPP")}</div>
                 </div>
               </div>
-              
-              <div className="pt-4">
-                <h4 className="font-medium mb-2">Activity Summary</h4>
-                <div className="bg-muted p-3 rounded-md text-sm">
-                  <p>Chamas: 3</p>
-                  <p>Total Contributions: KES 45,000</p>
-                  <p>Last Active: Yesterday</p>
-                </div>
-              </div>
+              {activityData && (
+                <>
+                  <div className="space-y-2">
+                    <h4 className="font-medium">Recent Activity</h4>
+                    <div className="space-y-4">
+                      {activityData.transactions.length > 0 && (
+                        <div>
+                          <h5 className="text-sm font-medium mb-2">Recent Transactions</h5>
+                          <div className="space-y-1">
+                            {activityData.transactions.map((tx: any) => (
+                              <div key={tx.id} className="text-sm flex justify-between">
+                                <span>{tx.type}</span>
+                                <span>{tx.amount} KES</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {activityData.messages.length > 0 && (
+                        <div>
+                          <h5 className="text-sm font-medium mb-2">Recent Messages</h5>
+                          <div className="space-y-1">
+                            {activityData.messages.map((msg: any) => (
+                              <div key={msg.id} className="text-sm">
+                                {msg.content.substring(0, 50)}...
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {activityData.chamas.length > 0 && (
+                        <div>
+                          <h5 className="text-sm font-medium mb-2">Chama Memberships</h5>
+                          <div className="space-y-1">
+                            {activityData.chamas.map((chama: any) => (
+                              <div key={chama.id} className="text-sm flex justify-between">
+                                <span>{chama.name}</span>
+                                <Badge variant="outline">{chama.role}</Badge>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
           )}
-          
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setViewUserDialogOpen(false)}>
-              Close
-            </Button>
-            <Button>
-              <Edit className="mr-2 h-4 w-4" />
-              Edit User
-            </Button>
-          </DialogFooter>
         </DialogContent>
       </Dialog>
-      
-      {/* Block User Dialog */}
+
+      {/* Block User Confirmation Dialog */}
       <AlertDialog open={blockUserDialogOpen} onOpenChange={setBlockUserDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Block User</AlertDialogTitle>
+            <AlertDialogTitle>
+              {selectedUser?.isActive ? "Block User" : "Unblock User"}
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              {selectedUser && (
-                <>
-                  <div className="flex items-center gap-2 mb-2 text-destructive">
-                    <AlertTriangle className="h-5 w-5" />
-                    <span className="font-medium">Warning: This is a significant action</span>
-                  </div>
-                  <p>
-                    You're about to block <span className="font-medium">{selectedUser.fullName}</span>. 
-                    This user will not be able to log in or use any features of the platform until unblocked.
-                  </p>
-                </>
-              )}
+              {selectedUser?.isActive
+                ? "Are you sure you want to block this user? They will not be able to access their account until unblocked."
+                : "Are you sure you want to unblock this user? They will regain access to their account."}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction 
-              className="bg-destructive text-destructive-foreground"
+            <AlertDialogAction
               onClick={confirmBlockUser}
+              className={selectedUser?.isActive ? "bg-destructive" : ""}
             >
-              Yes, Block User
+              {selectedUser?.isActive ? "Block" : "Unblock"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
