@@ -18,3 +18,7 @@ export const insertMindMapSchema = createInsertSchema(mindMaps).omit({
   createdAt: true,
   updatedAt: true,
 });
+
+// // Add to your type exports at the bottom of the file
+// export type MindMap = typeof mindMaps.$inferSelect;
+// export type InsertMindMap = z.infer<typeof insertMindMapSchema>;
