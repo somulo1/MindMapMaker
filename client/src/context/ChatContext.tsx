@@ -66,7 +66,13 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   // Fetch user messages
   const { data: userMessagesData, isLoading: isLoadingUserMessages } = useQuery({
     queryKey: ['/api/messages/user'],
+    queryFn: async () => {
+      const res = await apiRequest('GET', '/api/messages');
+      return res.json();
+    },
     enabled: !!user,
+    staleTime: 30 * 1000, // Consider data fresh for 30 seconds
+    cacheTime: 5 * 60 * 1000, // Keep in cache for 5 minutes
   });
   
   // Fetch chama messages when a chama is selected
@@ -74,10 +80,12 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     queryKey: ['/api/messages/chama', currentChamaId],
     queryFn: async () => {
       if (!currentChamaId) throw new Error('No chama selected');
-      const res = await apiRequest('GET', `/api/messages/chama/${currentChamaId}`);
+      const res = await apiRequest('GET', `/api/chamas/${currentChamaId}/messages`);
       return res.json();
     },
     enabled: !!user && !!currentChamaId,
+    staleTime: 30 * 1000, // Consider data fresh for 30 seconds
+    cacheTime: 5 * 60 * 1000, // Keep in cache for 5 minutes
   });
   
   // Create message mutation
@@ -104,13 +112,29 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   // Update messages when data changes
   useEffect(() => {
     if (userMessagesData?.messages) {
-      setMessages(userMessagesData.messages);
+      setMessages(prevMessages => {
+        // Merge new messages with existing ones, avoiding duplicates
+        const messageMap = new Map();
+        [...prevMessages, ...userMessagesData.messages].forEach(msg => {
+          messageMap.set(msg.id, msg);
+        });
+        return Array.from(messageMap.values())
+          .sort((a, b) => new Date(b.sentAt).getTime() - new Date(a.sentAt).getTime());
+      });
     }
   }, [userMessagesData]);
   
   useEffect(() => {
     if (chamaMessagesData?.messages) {
-      setChamaMessages(chamaMessagesData.messages);
+      setChamaMessages(prevMessages => {
+        // Merge new messages with existing ones, avoiding duplicates
+        const messageMap = new Map();
+        [...prevMessages, ...chamaMessagesData.messages].forEach(msg => {
+          messageMap.set(msg.id, msg);
+        });
+        return Array.from(messageMap.values())
+          .sort((a, b) => new Date(b.sentAt).getTime() - new Date(a.sentAt).getTime());
+      });
     }
   }, [chamaMessagesData]);
   
@@ -122,22 +146,22 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     const unregisterDirectMessage = registerHandler('direct_message', (data) => {
       if (data.message) {
         setMessages(prevMessages => {
-          // Check if we already have this message (by content and sender)
-          const existingIndex = prevMessages.findIndex(
-            msg => msg.content === data.message.content && 
-                  msg.senderId === data.message.senderId &&
-                  Math.abs(new Date(msg.sentAt).getTime() - new Date(data.message.sentAt).getTime()) < 5000
-          );
-          
-          if (existingIndex !== -1) {
-            // Update existing message with server data
-            const updatedMessages = [...prevMessages];
-            updatedMessages[existingIndex] = data.message;
-            return updatedMessages;
-          }
-          
-          // Add new message
-          return [data.message, ...prevMessages];
+          const messageMap = new Map();
+          [...prevMessages, data.message].forEach(msg => {
+            messageMap.set(msg.id, msg);
+          });
+          return Array.from(messageMap.values())
+            .sort((a, b) => new Date(b.sentAt).getTime() - new Date(a.sentAt).getTime());
+        });
+        
+        // Update React Query cache
+        queryClient.setQueryData(['/api/messages/user'], (oldData: any) => {
+          if (!oldData) return { messages: [data.message] };
+          const messageMap = new Map();
+          [...oldData.messages, data.message].forEach(msg => {
+            messageMap.set(msg.id, msg);
+          });
+          return { messages: Array.from(messageMap.values()) };
         });
       }
     });
@@ -146,22 +170,22 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     const unregisterChamaMessage = registerHandler('chama_message', (data) => {
       if (data.message && data.message.chamaId === currentChamaId) {
         setChamaMessages(prevMessages => {
-          // Check if we already have this message (by content and sender)
-          const existingIndex = prevMessages.findIndex(
-            msg => msg.content === data.message.content && 
-                  msg.senderId === data.message.senderId &&
-                  Math.abs(new Date(msg.sentAt).getTime() - new Date(data.message.sentAt).getTime()) < 5000
-          );
-          
-          if (existingIndex !== -1) {
-            // Update existing message with server data
-            const updatedMessages = [...prevMessages];
-            updatedMessages[existingIndex] = data.message;
-            return updatedMessages;
-          }
-          
-          // Add new message
-          return [data.message, ...prevMessages];
+          const messageMap = new Map();
+          [...prevMessages, data.message].forEach(msg => {
+            messageMap.set(msg.id, msg);
+          });
+          return Array.from(messageMap.values())
+            .sort((a, b) => new Date(b.sentAt).getTime() - new Date(a.sentAt).getTime());
+        });
+        
+        // Update React Query cache
+        queryClient.setQueryData(['/api/messages/chama', currentChamaId], (oldData: any) => {
+          if (!oldData) return { messages: [data.message] };
+          const messageMap = new Map();
+          [...oldData.messages, data.message].forEach(msg => {
+            messageMap.set(msg.id, msg);
+          });
+          return { messages: Array.from(messageMap.values()) };
         });
       }
     });
@@ -169,6 +193,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     // Handle message read receipts
     const unregisterMessageRead = registerHandler('message_read', (data) => {
       if (data.messageId) {
+        // Update local state
         setMessages(prevMessages => 
           prevMessages.map(msg => 
             msg.id === data.messageId ? { ...msg, isRead: true } : msg
@@ -180,6 +205,30 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
             msg.id === data.messageId ? { ...msg, isRead: true } : msg
           )
         );
+        
+        // Update React Query cache for user messages
+        queryClient.setQueryData(['/api/messages/user'], (oldData: any) => {
+          if (!oldData) return oldData;
+          return {
+            ...oldData,
+            messages: oldData.messages.map(msg =>
+              msg.id === data.messageId ? { ...msg, isRead: true } : msg
+            )
+          };
+        });
+        
+        // Update React Query cache for chama messages
+        if (currentChamaId) {
+          queryClient.setQueryData(['/api/messages/chama', currentChamaId], (oldData: any) => {
+            if (!oldData) return oldData;
+            return {
+              ...oldData,
+              messages: oldData.messages.map(msg =>
+                msg.id === data.messageId ? { ...msg, isRead: true } : msg
+              )
+            };
+          });
+        }
       }
     });
     
@@ -188,7 +237,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       unregisterChamaMessage();
       unregisterMessageRead();
     };
-  }, [isConnected, isAuthenticated, registerHandler, currentChamaId]);
+  }, [isConnected, isAuthenticated, registerHandler, currentChamaId, queryClient]);
   
   // Join chama chat
   const joinChamaChat = (chamaId: number) => {

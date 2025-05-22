@@ -388,7 +388,7 @@ export default function ChamaDocuments() {
                   onDownload={handleDownload}
                   onDelete={(id) => deleteMutation.mutate(id)}
                 />
-              </TabsContent>
+            </TabsContent>
             ))}
           </Tabs>
         </CardContent>
@@ -421,18 +421,18 @@ function DocumentTable({ documents, onDownload, onDelete }: DocumentTableProps) 
   };
 
   return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead>Name</TableHead>
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Name</TableHead>
           <TableHead>Category</TableHead>
-          <TableHead>Uploaded By</TableHead>
-          <TableHead>Date</TableHead>
-          <TableHead>Size</TableHead>
+            <TableHead>Uploaded By</TableHead>
+            <TableHead>Date</TableHead>
+            <TableHead>Size</TableHead>
           <TableHead className="w-[100px]">Actions</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
         {documents.length === 0 ? (
           <TableRow>
             <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
@@ -443,42 +443,42 @@ function DocumentTable({ documents, onDownload, onDelete }: DocumentTableProps) 
           documents.map((doc) => (
             <TableRow key={doc.id}>
               <TableCell className="font-medium">
-                <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2">
                   {getFileIcon(doc.fileType)}
                   {doc.name}
-                </div>
-              </TableCell>
+                  </div>
+                </TableCell>
               <TableCell>{doc.category}</TableCell>
               <TableCell>{doc.uploadedBy}</TableCell>
               <TableCell>{new Date(doc.uploadedAt).toLocaleDateString()}</TableCell>
               <TableCell>{formatFileSize(doc.fileSize)}</TableCell>
-              <TableCell>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
+                <TableCell>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
                     <Button variant="ghost" className="h-8 w-8 p-0">
-                      <MoreVertical className="h-4 w-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
+                        <MoreVertical className="h-4 w-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
                     <DropdownMenuItem onClick={() => onDownload(doc)}>
                       <Download className="mr-2 h-4 w-4" />
-                      Download
-                    </DropdownMenuItem>
+                        Download
+                      </DropdownMenuItem>
                     <DropdownMenuItem 
                       onClick={() => onDelete(doc.id)}
                       className="text-red-600"
                     >
                       <Trash2 className="mr-2 h-4 w-4" />
-                      Delete
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </TableCell>
-            </TableRow>
-          ))
-        )}
-      </TableBody>
-    </Table>
+                        Delete
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </TableCell>
+              </TableRow>
+            ))
+          )}
+        </TableBody>
+      </Table>
   );
 }
 

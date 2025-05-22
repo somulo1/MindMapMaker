@@ -24,6 +24,7 @@ import * as wishlistController from "./controllers/wishlistController";
 import * as cartController from "./controllers/cartController";
 import * as adminController from "./controllers/adminController";
 import * as chamaInvitationController from "./controllers/chamaInvitationController";
+import * as userController from "./controllers/userController";
 
 const SessionStore = MemoryStore(session);
 
@@ -131,36 +132,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
     next();
   };
   // CHAMA MEMBERS API
-  app.get("/api/chamas/:chamaId/members", requireAuth, verifyChamaMembership, async (req, res) => {
+  app.get("/api/chamas/:id/members", requireAuth, verifyChamaMembership, async (req, res) => {
     try {
-      const chamaId = parseInt(req.params.chamaId);
-      
-      // Clean up any duplicate members first
-      await storage.cleanupDuplicateMembers(chamaId);
-      
+      const chamaId = parseInt(req.params.id);
       const members = await storage.getChamaMembers(chamaId);
-      
-      // Enrich members with user details
-      const membersWithUserDetails = await Promise.all(
-        members.map(async (member) => {
-          const user = await storage.getUser(member.userId);
-          return {
-            ...member,
-            user: user ? {
-              id: user.id,
-              username: user.username,
-              fullName: user.fullName,
-              email: user.email,
-              profilePic: user.profilePic,
-              location: user.location,
-              phoneNumber: user.phoneNumber
-            } : null
-          };
-        })
-      );
-      
-      res.json({ members: membersWithUserDetails });
+      res.json({ members });
     } catch (error) {
+      console.error('Error getting chama members:', error);
+      res.status(500).json({ message: "Server error" });
+    }
+  });
+
+  // Update member rating
+  app.put("/api/chamas/:id/members/:memberId/rating", requireAuth, verifyChamaMembership, async (req, res) => {
+    try {
+      const chamaId = parseInt(req.params.id);
+      const memberId = parseInt(req.params.memberId);
+      const { rating } = req.body;
+
+      // Validate rating
+      if (typeof rating !== 'number' || rating < 1 || rating > 5) {
+        return res.status(400).json({ message: "Rating must be a number between 1 and 5" });
+      }
+
+      // Update the rating
+      const updatedMember = await storage.updateChamaMember(memberId, { rating });
+      if (!updatedMember) {
+        return res.status(404).json({ message: "Member not found" });
+      }
+
+      res.json({ member: updatedMember });
+    } catch (error) {
+      console.error('Error updating member rating:', error);
       res.status(500).json({ message: "Server error" });
     }
   });
@@ -251,12 +254,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Chama invitation routes
-  app.post("/api/chamas/:chamaId/invitations", isAuthenticated, handleErrors(chamaInvitationController.sendInvitation));
+  app.post("/api/chamas/:chamaId/invitations", isAuthenticated, chamaInvitationController.sendInvitation);
+  app.post("/api/chamas/invitations/:invitationId/:action", isAuthenticated, chamaInvitationController.handleInvitationResponse);
   app.get("/api/chamas/:chamaId/invitations", isAuthenticated, handleErrors(chamaInvitationController.getChamaInvitations));
   app.get("/api/invitations", isAuthenticated, handleErrors(chamaInvitationController.getUserInvitations));
-  app.post("/api/invitations/:invitationId/accept", isAuthenticated, handleErrors(chamaInvitationController.acceptInvitation));
-  app.post("/api/invitations/:invitationId/reject", isAuthenticated, handleErrors(chamaInvitationController.rejectInvitation));
-  app.post("/api/invitations/:invitationId/cancel", isAuthenticated, handleErrors(chamaInvitationController.cancelInvitation));
 
   // Wallet routes
   app.get("/api/wallets/user", isAuthenticated, handleErrors(walletController.getUserWallet));
@@ -391,6 +392,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/marketplace/user", isAuthenticated, handleErrors(marketplaceController.getUserMarketplaceItems));
   app.post("/api/marketplace", isAuthenticated, handleErrors(marketplaceController.createMarketplaceItem));
   app.get("/api/marketplace/:id", handleErrors(marketplaceController.getMarketplaceItemById));
+  app.delete("/api/marketplace/item/:id", isAuthenticated, handleErrors(marketplaceController.deleteMarketplaceItem));
+  app.put("/api/marketplace/item/:id", isAuthenticated, handleErrors(marketplaceController.updateMarketplaceItem));
 
   // Learning routes
   app.get("/api/learning", handleErrors(learningController.getLearningResources));
@@ -456,15 +459,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
         chamaId,
         title,
         description: description || null,
-        scheduledFor,
+        scheduledFor: meetingDate.toISOString(), // Pass as ISO string
         location: location || null,
         agenda: agenda || null,
-        status: meetingDate > new Date() ? "upcoming" : "completed",
-        minutes: null
+        status: meetingDate > new Date() ? "upcoming" : "completed"
       });
 
-      res.status(201).json(meeting);
+      // Format the response
+      const response = {
+        ...meeting,
+        scheduledFor: meeting.scheduledFor.toISOString(),
+        createdAt: meeting.createdAt.toISOString(),
+        updatedAt: meeting.updatedAt.toISOString()
+      };
+
+      res.status(201).json(response);
     } catch (error) {
+      console.error('Error creating meeting:', error);
       res.status(500).json({ message: "Server error" });
     }
   });
@@ -483,6 +494,48 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(meeting);
     } catch (error) {
       res.status(500).json({ message: "Server error" });
+    }
+  });
+
+  // User routes
+  app.get("/api/users/me", isAuthenticated, handleErrors(userController.getCurrentUser));
+  app.post("/api/users/search", isAuthenticated, handleErrors(userController.searchUsers));
+
+  // Notification routes
+  app.get("/api/notifications", isAuthenticated, async (req, res) => {
+    try {
+      const userId = (req.user as any).id;
+      const notifications = await storage.getUserNotifications(userId);
+      
+      // Format the response
+      const formattedNotifications = notifications.map(notification => ({
+        ...notification,
+        createdAt: new Date(Number(notification.createdAt)),
+        updatedAt: notification.updatedAt ? new Date(Number(notification.updatedAt)) : null
+      }));
+      
+      res.json(formattedNotifications);
+    } catch (error) {
+      console.error("Error fetching notifications:", error);
+      res.status(500).json({ message: "Failed to fetch notifications" });
+    }
+  });
+
+  app.post("/api/notifications/:id/read", isAuthenticated, async (req, res) => {
+    try {
+      const notificationId = parseInt(req.params.id);
+      const userId = (req.user as any).id;
+      
+      const notification = await storage.getNotification(notificationId);
+      if (!notification || notification.userId !== userId) {
+        return res.status(404).json({ message: "Notification not found" });
+      }
+
+      await storage.updateNotification(notificationId, { read: true });
+      res.json({ message: "Notification marked as read" });
+    } catch (error) {
+      console.error("Error marking notification as read:", error);
+      res.status(500).json({ message: "Failed to mark notification as read" });
     }
   });
 

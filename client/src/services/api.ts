@@ -90,7 +90,7 @@ export const getChamaMembers = async (chamaId: number): Promise<ChamaMemberWithU
   try {
     const res = await apiRequest("GET", `/api/chamas/${chamaId}/members`);
     if (!res.ok) {
-      throw new Error(`Failed to fetch members: ${res.statusText}`);
+      throw new Error(`${res.status}: ${await res.text()}`);
     }
     const data = await res.json();
     return Array.isArray(data) ? data : data.members || [];
@@ -105,6 +105,11 @@ export const addChamaMember = async (chamaId: number, userId: number, role: stri
     userId,
     role
   });
+  return res.json();
+};
+
+export const updateMemberRating = async (chamaId: number, memberId: number, rating: number): Promise<ChamaMember> => {
+  const res = await apiRequest("PUT", `/api/chamas/${chamaId}/members/${memberId}/rating`, { rating });
   return res.json();
 };
 
@@ -201,12 +206,12 @@ export const createProduct = async (productData: Omit<InsertProduct, 'sellerId'>
 };
 
 // Messages API
-export const getUserMessages = async (): Promise<Message[]> => {
+export const getUserMessages = async () => {
   const res = await apiRequest("GET", "/api/messages");
   return res.json();
 };
 
-export const getChamaMessages = async (chamaId: number): Promise<Message[]> => {
+export const getChamaMessages = async (chamaId: number) => {
   const res = await apiRequest("GET", `/api/chamas/${chamaId}/messages`);
   return res.json();
 };

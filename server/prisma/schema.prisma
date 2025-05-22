@@ -1,0 +1,11 @@
+model CartItem {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  itemId    Int
+  quantity  Int      @default(1)
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  item      MarketplaceItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@map("cart_items")
+} 

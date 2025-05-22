@@ -3,7 +3,7 @@ import { Link, useLocation } from 'wouter';
 import { Button } from '@/components/ui/button';
 import { formatCurrency } from '@/lib/utils';
 import Avatar from '../common/Avatar';
-import { Heart, ShoppingCart, ArrowLeft, MessageCircle } from 'lucide-react';
+import { Heart, ShoppingCart, ArrowLeft, MessageCircle, Edit, Trash2 } from 'lucide-react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiRequest } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
@@ -20,6 +20,7 @@ interface MarketplaceItemProps {
     price: number;
     currency: string;
     imageUrl?: string;
+    quantity: number;
     seller: {
       id: number;
       username: string;
@@ -40,6 +41,7 @@ const MarketplaceItem: React.FC<MarketplaceItemProps> = ({ item, showBackButton 
   const { sendDirectMessage } = useChat();
   const [isMessageDialogOpen, setIsMessageDialogOpen] = useState(false);
   const [messageContent, setMessageContent] = useState('');
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   
   // Safely access seller information with fallbacks
   const seller = item.seller || {};
@@ -56,6 +58,10 @@ const MarketplaceItem: React.FC<MarketplaceItemProps> = ({ item, showBackButton 
 
   // Fallback image URL if not provided
   const imageUrl = item.imageUrl || 'https://images.unsplash.com/photo-1607082348824-0a96f2a4b9da?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&h=300&q=80';
+
+  // Stock status
+  const isOutOfStock = item.quantity <= 0;
+  const isLowStock = item.quantity <= 5;
 
   // Toggle wishlist mutation
   const toggleWishlistMutation = useMutation({
@@ -123,6 +129,35 @@ const MarketplaceItem: React.FC<MarketplaceItemProps> = ({ item, showBackButton 
     },
   });
 
+  // Delete item mutation
+  const deleteItemMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest('DELETE', `/api/marketplace/item/${item.id}`);
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Failed to delete item');
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/marketplace'] });
+      toast({
+        title: "Item deleted",
+        description: "Your item has been removed from the marketplace",
+      });
+      setIsDeleteDialogOpen(false);
+      // Redirect to marketplace after successful deletion
+      setLocation('/marketplace');
+    },
+    onError: (error: Error) => {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error.message || "Failed to delete item",
+      });
+    },
+  });
+
   // Handle sending message to seller
   const handleSendMessage = () => {
     if (!user || !messageContent.trim()) return;
@@ -186,44 +221,82 @@ const MarketplaceItem: React.FC<MarketplaceItemProps> = ({ item, showBackButton 
           <span className="text-xs text-neutral-500 dark:text-neutral-400">{displayName}</span>
         </div>
         <h3 className="font-medium text-sm mb-1">{item.title}</h3>
-        <p className="text-primary font-semibold text-sm mb-3">{formattedPrice}</p>
+        <div className="flex justify-between items-center mb-3">
+          <p className="text-primary font-semibold text-sm">{formattedPrice}</p>
+          <div className="flex items-center gap-1">
+            {isOutOfStock ? (
+              <span className="text-xs text-destructive font-medium">Out of Stock</span>
+            ) : (
+              <span className={`text-xs font-medium ${isLowStock ? 'text-warning' : 'text-muted-foreground'}`}>
+                {item.quantity} left
+              </span>
+            )}
+          </div>
+        </div>
         <div className="flex gap-2">
-          <Button 
-            variant="outline" 
-            size="sm"
-            className="flex-1 flex items-center gap-2"
-            onClick={() => addToCartMutation.mutate()}
-            disabled={addToCartMutation.isPending}
-          >
-            <ShoppingCart className="h-4 w-4" />
-            {item.isInCart ? 'In Cart' : 'Add to Cart'}
-          </Button>
-          <Button
-            variant={item.isInWishlist ? "secondary" : "outline"}
-            size="icon"
-            className={`h-8 w-8 transition-colors ${
-              item.isInWishlist ? 'bg-red-50 hover:bg-red-100 dark:bg-red-900/20 dark:hover:bg-red-900/30' : ''
-            }`}
-            onClick={() => toggleWishlistMutation.mutate()}
-            disabled={toggleWishlistMutation.isPending}
-          >
-            <Heart 
-              className={`h-4 w-4 transition-colors ${
-                item.isInWishlist 
-                  ? 'fill-red-500 stroke-red-500' 
-                  : 'stroke-current hover:stroke-red-500'
-              }`}
-            />
-          </Button>
-          {user && user.id !== seller.id && (
-            <Button
-              variant="outline"
-              size="icon"
-              className="h-8 w-8"
-              onClick={() => setIsMessageDialogOpen(true)}
-            >
-              <MessageCircle className="h-4 w-4" />
-            </Button>
+          {user?.id === seller.id ? (
+            <>
+              <Button 
+                variant="outline" 
+                size="sm"
+                className="flex-1 flex items-center gap-2"
+                asChild
+              >
+                <Link href={`/marketplace/${item.id}/edit`}>
+                  <Edit className="h-4 w-4" />
+                  Edit
+                </Link>
+              </Button>
+              <Button
+                variant="destructive"
+                size="sm"
+                className="flex items-center gap-2"
+                onClick={() => setIsDeleteDialogOpen(true)}
+              >
+                <Trash2 className="h-4 w-4" />
+                Delete
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button 
+                variant="outline" 
+                size="sm"
+                className="flex-1 flex items-center gap-2"
+                onClick={() => addToCartMutation.mutate()}
+                disabled={addToCartMutation.isPending || isOutOfStock}
+              >
+                <ShoppingCart className="h-4 w-4" />
+                {isOutOfStock ? 'Out of Stock' : item.isInCart ? 'In Cart' : 'Add to Cart'}
+              </Button>
+              <Button
+                variant={item.isInWishlist ? "secondary" : "outline"}
+                size="icon"
+                className={`h-8 w-8 transition-colors ${
+                  item.isInWishlist ? 'bg-red-50 hover:bg-red-100 dark:bg-red-900/20 dark:hover:bg-red-900/30' : ''
+                }`}
+                onClick={() => toggleWishlistMutation.mutate()}
+                disabled={toggleWishlistMutation.isPending}
+              >
+                <Heart 
+                  className={`h-4 w-4 transition-colors ${
+                    item.isInWishlist 
+                      ? 'fill-red-500 stroke-red-500' 
+                      : 'stroke-current hover:stroke-red-500'
+                  }`}
+                />
+              </Button>
+              {user && (
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={() => setIsMessageDialogOpen(true)}
+                >
+                  <MessageCircle className="h-4 w-4" />
+                </Button>
+              )}
+            </>
           )}
         </div>
         <Button 
@@ -260,6 +333,29 @@ const MarketplaceItem: React.FC<MarketplaceItemProps> = ({ item, showBackButton 
               disabled={!messageContent.trim()}
             >
               Send Message
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Item</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete "{item.title}"? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsDeleteDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button 
+              variant="destructive"
+              onClick={() => deleteItemMutation.mutate()}
+              disabled={deleteItemMutation.isPending}
+            >
+              {deleteItemMutation.isPending ? "Deleting..." : "Delete"}
             </Button>
           </DialogFooter>
         </DialogContent>

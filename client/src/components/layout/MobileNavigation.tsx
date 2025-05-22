@@ -1,10 +1,25 @@
 import { Link, useLocation } from "wouter";
 import { 
-  Home, Wallet, Users, ShoppingCart, MessageSquare 
+  Home, Wallet, Users, ShoppingCart, MessageSquare, School, Brain
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 
-export default function MobileNavigation() {
+interface MobileNavigationProps {
+  sidebarOpen: boolean;
+  setSidebarOpen: (open: boolean) => void;
+  notificationsOpen: boolean;
+  openNotifications: () => void;
+  unreadCount: number;
+}
+
+export default function MobileNavigation({
+  sidebarOpen,
+  setSidebarOpen,
+  notificationsOpen,
+  openNotifications,
+  unreadCount
+}: MobileNavigationProps) {
   const [location] = useLocation();
 
   const isActive = (path: string) => {

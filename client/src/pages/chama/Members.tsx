@@ -29,13 +29,15 @@ import {
   AlertCircle,
   Loader2,
   Users,
-  BarChart4
+  BarChart4,
+  Star
 } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { queryClient } from "@/lib/queryClient";
 import { getChamaMembers, addChamaMember } from "@/services/api";
 import { useToast } from "@/hooks/use-toast";
 import { ChamaMember, ChamaInvitation, User } from "@shared/schema";
+import { MemberDetails } from "@/components/chama/MemberDetails";
 
 // Form schema for adding a new member
 const addMemberSchema = z.object({
@@ -48,6 +50,7 @@ type AddMemberFormValues = z.infer<typeof addMemberSchema>;
 // Extended types for API responses
 type ChamaMemberWithUser = ChamaMember & {
   user: Pick<User, "id" | "username" | "fullName" | "email" | "profilePic" | "location" | "phoneNumber">;
+  rating?: number | null;
 };
 
 type ChamaInvitationWithUser = {
@@ -70,6 +73,116 @@ type ChamaMembersResponse = {
 type ChamaInvitationsResponse = {
   invitations: ChamaInvitationWithUser[];
 };
+
+interface AddMemberDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  chamaId: number;
+}
+
+function AddMemberDialog({ open, onOpenChange, chamaId }: AddMemberDialogProps) {
+  const { toast } = useToast();
+  const form = useForm<AddMemberFormValues>({
+    resolver: zodResolver(addMemberSchema),
+    defaultValues: {
+      email: "",
+      role: "member",
+    },
+  });
+
+  const inviteMemberMutation = useMutation({
+    mutationFn: async (data: AddMemberFormValues) => {
+      return apiRequest("POST", `/api/chamas/${chamaId}/invitations`, {
+        email: data.email,
+        role: data.role
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/chamas/${chamaId}/invitations`] });
+      toast({
+        title: "Invitation sent",
+        description: "The invitation has been sent successfully.",
+      });
+      onOpenChange(false);
+      form.reset();
+    },
+    onError: (error) => {
+      toast({
+        title: "Failed to send invitation",
+        description: error instanceof Error ? error.message : "Failed to send invitation",
+        variant: "destructive",
+      });
+    },
+  });
+
+  function onSubmit(data: AddMemberFormValues) {
+    inviteMemberMutation.mutate(data);
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Add New Member</DialogTitle>
+          <DialogDescription>
+            Send an invitation to add a new member to the chama.
+          </DialogDescription>
+        </DialogHeader>
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+            <FormField
+              control={form.control}
+              name="email"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Email</FormLabel>
+                  <FormControl>
+                    <Input placeholder="member@example.com" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="role"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Role</FormLabel>
+                  <Select onValueChange={field.onChange} defaultValue={field.value}>
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select a role" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="member">Member</SelectItem>
+                      <SelectItem value="secretary">Secretary</SelectItem>
+                      <SelectItem value="treasurer">Treasurer</SelectItem>
+                      <SelectItem value="chairperson">Chairperson</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <DialogFooter>
+              <Button
+                type="submit"
+                disabled={inviteMemberMutation.isPending}
+              >
+                {inviteMemberMutation.isPending && (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                )}
+                Send Invitation
+              </Button>
+            </DialogFooter>
+          </form>
+        </Form>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 export default function ChamaMembers() {
   const { id } = useParams<{ id: string }>();
@@ -213,531 +326,70 @@ export default function ChamaMembers() {
     };
   };
 
+  const handleMemberClick = (member: ChamaMemberWithUser) => {
+    setSelectedMember(member);
+    setIsDetailsOpen(true);
+  };
+
   return (
     <ChamaLayout>
-      <div className="mb-6">
-        <div className="flex flex-col md:flex-row justify-between md:items-center gap-4">
-          <div>
-            <h2 className="text-xl font-semibold">Chama Members</h2>
-            <p className="text-muted-foreground">
-              Manage members and their roles in your chama
-            </p>
-          </div>
-          
-          <div className="flex gap-2">
-            <div className="relative w-full md:w-64">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                type="search"
-                placeholder="Search members..."
-                className="pl-9"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-              />
-            </div>
-            
-            <Dialog open={openAddMemberDialog} onOpenChange={setOpenAddMemberDialog}>
-              <DialogTrigger asChild>
-                <Button>
-                  <UserPlus className="h-4 w-4 mr-2" />
-                  Add Member
-                </Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Add New Member</DialogTitle>
-                  <DialogDescription>
-                    Invite a new member to join this chama group.
-                  </DialogDescription>
-                </DialogHeader>
-                
-                <Form {...form}>
-                  <form onSubmit={form.handleSubmit(onAddMemberSubmit)} className="space-y-4">
-                    <FormField
-                      control={form.control}
-                      name="email"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Email Address</FormLabel>
-                          <FormControl>
-                            <Input 
-                              placeholder="Enter email address" 
-                              {...field} 
-                              type="email"
-                            />
-                          </FormControl>
-                          <FormDescription>
-                            The person will receive an invitation email.
-                          </FormDescription>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    
-                    <FormField
-                      control={form.control}
-                      name="role"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Role</FormLabel>
-                          <Select onValueChange={field.onChange} defaultValue={field.value}>
-                            <FormControl>
-                              <SelectTrigger>
-                                <SelectValue placeholder="Select role" />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                              <SelectItem value="member">Regular Member</SelectItem>
-                              <SelectItem value="secretary">Secretary</SelectItem>
-                              <SelectItem value="treasurer">Treasurer</SelectItem>
-                              <SelectItem value="chairperson">Chairperson</SelectItem>
-                            </SelectContent>
-                          </Select>
-                          <FormDescription>
-                            The member's role determines their permissions.
-                          </FormDescription>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    
-                    <DialogFooter>
-                      <Button 
-                        type="button" 
-                        variant="outline" 
-                        onClick={() => setOpenAddMemberDialog(false)}
-                      >
-                        Cancel
-                      </Button>
-                      <Button 
-                        type="submit"
-                        disabled={inviteMemberMutation.isPending}
-                      >
-                        {inviteMemberMutation.isPending ? (
-                          <>
-                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            Sending...
-                          </>
-                        ) : (
-                          <>
-                            <Send className="mr-2 h-4 w-4" />
-                            Send Invitation
-                          </>
-                        )}
-                      </Button>
-                    </DialogFooter>
-                  </form>
-                </Form>
-              </DialogContent>
-            </Dialog>
-          </div>
-        </div>
+      <div className="space-y-4">
+        <div className="flex justify-between items-center">
+          <h2 className="text-2xl font-bold">Members</h2>
+          <Button onClick={() => setOpenAddMemberDialog(true)}>Add Member</Button>
       </div>
       
-      <Tabs defaultValue="members" className="mt-6">
-        <TabsList>
-          <TabsTrigger value="members" className="flex items-center gap-2">
-            <Users className="h-4 w-4" />
-            Members ({filteredMembers.length})
-          </TabsTrigger>
-          <TabsTrigger value="invitations" className="flex items-center gap-2">
-            <Mail className="h-4 w-4" />
-            Invitations ({invitations.length})
-          </TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="members" className="mt-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {isLoading ? (
-              <div className="col-span-full flex justify-center py-8">
-                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-              </div>
-            ) : filteredMembers.length === 0 ? (
-              <div className="col-span-full text-center py-8">
-                <p className="text-muted-foreground">No members found</p>
-              </div>
-            ) : (
-              filteredMembers.map((member: ChamaMemberWithUser) => (
-                <Card key={member.id} className="flex flex-col">
-                  <CardHeader>
-                    <div className="flex items-start justify-between">
-                      <div className="flex items-center gap-3">
-                        <Avatar>
-                          <AvatarImage src={member.user.profilePic || undefined} />
-                          <AvatarFallback>{getInitials(member.user.fullName)}</AvatarFallback>
-                        </Avatar>
-                        <div>
-                          <CardTitle className="text-base">{member.user.fullName}</CardTitle>
-                          <CardDescription>{member.user.email}</CardDescription>
-                        </div>
-                      </div>
-                      <Badge className={getRoleBadgeStyles(member.role)}>
-                        {member.role}
-                      </Badge>
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                        <Phone className="h-4 w-4" />
-                        {member.user.phoneNumber || "No phone number"}
-                      </div>
-                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                        <Calendar className="h-4 w-4" />
-                        Joined {new Date(member.joinedAt).toLocaleDateString()}
-                      </div>
-                    </div>
-                  </CardContent>
-                  <CardFooter className="mt-auto">
-                    <Button 
-                      variant="outline" 
-                      className="w-full"
-                      onClick={() => {
-                        setSelectedMember(member);
-                        setIsDetailsOpen(true);
-                      }}
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {members.map((member) => (
+            <Card 
+              key={member.id} 
+              className="cursor-pointer hover:shadow-md transition-shadow"
+              onClick={() => handleMemberClick(member)}
                     >
-                      View Details
-                    </Button>
-                  </CardFooter>
-                </Card>
-              ))
-            )}
-          </div>
-        </TabsContent>
-
-        <TabsContent value="invitations" className="mt-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {isLoadingInvitations ? (
-              <div className="col-span-full flex justify-center py-8">
-                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-              </div>
-            ) : invitations.length === 0 ? (
-              <div className="col-span-full text-center py-8">
-                <p className="text-muted-foreground">No pending invitations</p>
-              </div>
-            ) : (
-              invitations.map((invitation: ChamaInvitationWithUser) => (
-                <Card key={invitation.id}>
-                  <CardHeader>
-                    <div className="flex items-start justify-between">
-                      <div className="flex items-center gap-3">
+              <CardHeader className="flex flex-row items-center gap-4">
                         <Avatar>
-                          <AvatarImage src={invitation.invitedUser.profilePic || undefined} />
+                  <AvatarImage src={member.user?.profilePic || undefined} />
                           <AvatarFallback>
-                            {getInitials(invitation.invitedUser.fullName)}
+                    {member.user?.fullName?.split(' ').map(n => n[0]).join('').toUpperCase()}
                           </AvatarFallback>
                         </Avatar>
                         <div>
-                          <CardTitle className="text-base">
-                            {invitation.invitedUser.fullName}
-                          </CardTitle>
-                          <CardDescription>
-                            {invitation.invitedUser.email}
-                          </CardDescription>
-                        </div>
-                      </div>
-                      <Badge variant={invitation.status === "pending" ? "outline" : "secondary"}>
-                        {invitation.status}
-                      </Badge>
+                  <CardTitle>{member.user?.fullName}</CardTitle>
+                  <CardDescription>{member.role}</CardDescription>
                     </div>
                   </CardHeader>
                   <CardContent>
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                        <AlertCircle className="h-4 w-4" />
-                        Invited as {invitation.role}
-                      </div>
-                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                        <Calendar className="h-4 w-4" />
-                        Sent {new Date(invitation.invitedAt).toLocaleDateString()}
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))
-            )}
-          </div>
-        </TabsContent>
-      </Tabs>
-      
-      {/* Member Details Dialog */}
-      {selectedMember && (
-        <Dialog open={isDetailsOpen} onOpenChange={setIsDetailsOpen}>
-          <DialogContent className="max-w-4xl">
-            <DialogHeader>
-              <DialogTitle>Member Details</DialogTitle>
-            </DialogHeader>
-            
-            <Tabs defaultValue="overview">
-              <TabsList className="mb-4">
-                <TabsTrigger value="overview">Overview</TabsTrigger>
-                <TabsTrigger value="contributions">Contributions</TabsTrigger>
-                <TabsTrigger value="attendance">Attendance</TabsTrigger>
-                <TabsTrigger value="permissions">Permissions</TabsTrigger>
-              </TabsList>
-              
-              <TabsContent value="overview" className="space-y-4">
-                <div className="flex flex-col md:flex-row gap-6">
-                  <div className="md:w-1/3">
-                    <Card>
-                      <CardContent className="pt-6">
-                        <div className="flex flex-col items-center text-center">
-                          <Avatar className="h-24 w-24 mb-4">
-                            <AvatarImage src="" alt={selectedMember.user.fullName} />
-                            <AvatarFallback className="text-2xl">{getInitials(selectedMember.user.fullName)}</AvatarFallback>
-                          </Avatar>
-                          <h3 className="text-xl font-semibold">{selectedMember.user.fullName}</h3>
-                          <Badge className={`mt-2 ${getRoleBadgeStyles(selectedMember.role)}`}>
-                            {selectedMember.role.charAt(0).toUpperCase() + selectedMember.role.slice(1)}
-                          </Badge>
-                          <p className="text-muted-foreground mt-2">
-                            Member since {new Date(selectedMember.joinedAt).toLocaleDateString()}
-                          </p>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  </div>
-                  
-                  <div className="md:w-2/3">
-                    <Card>
-                      <CardHeader className="pb-3">
-                        <CardTitle>Contact Information</CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="space-y-3">
-                          <div className="flex items-center gap-2">
-                            <Mail className="h-4 w-4 text-muted-foreground" />
-                            <span className="text-sm">{selectedMember.user.email}</span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <Phone className="h-4 w-4 text-muted-foreground" />
-                            <span className="text-sm">{selectedMember.user.phoneNumber || "Not provided"}</span>
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                    
-                    <Card className="mt-4">
-                      <CardHeader className="pb-3">
-                        <CardTitle>Summary</CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                          <div className="bg-muted rounded-lg p-3">
-                            <h4 className="text-sm font-medium mb-1">Total Contribution</h4>
-                            <p className="text-xl font-bold">
-                              KES {getMemberContributionStats(selectedMember.id).total.toLocaleString()}
-                            </p>
-                            <p className="text-xs text-muted-foreground">Contribution Rate: {getMemberContributionStats(selectedMember.id).rate}%</p>
-                          </div>
-                          
-                          <div className="bg-muted rounded-lg p-3">
-                            <h4 className="text-sm font-medium mb-1">Meeting Attendance</h4>
-                            <p className="text-xl font-bold">
-                              {getMemberAttendanceStats(selectedMember.id).attended}/{getMemberAttendanceStats(selectedMember.id).total}
-                            </p>
-                            <p className="text-xs text-muted-foreground">Attendance Rate: {getMemberAttendanceStats(selectedMember.id).rate}%</p>
-                          </div>
-                          
-                          <div className="bg-muted rounded-lg p-3">
-                            <h4 className="text-sm font-medium mb-1">Payment Status</h4>
-                            <div className="flex items-center gap-1 mb-1">
-                              {getMemberContributionStats(selectedMember.id).timely ? (
-                                <CheckCircle2 className="h-4 w-4 text-success" />
-                              ) : (
-                                <AlertCircle className="h-4 w-4 text-warning" />
-                              )}
-                              <p className="text-sm font-medium">
-                                {getMemberContributionStats(selectedMember.id).timely ? 
-                                  "Always On Time" : 
-                                  "Some Late Payments"}
-                              </p>
-                            </div>
-                            <p className="text-xs text-muted-foreground">
-                              {getMemberContributionStats(selectedMember.id).pending > 0 ? 
-                                `KES ${getMemberContributionStats(selectedMember.id).pending} pending payment` : 
-                                "No pending payments"}
-                            </p>
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  </div>
-                </div>
-              </TabsContent>
-              
-              <TabsContent value="contributions">
-                <Card>
-                  <CardHeader className="pb-3">
-                    <CardTitle>Contribution History</CardTitle>
-                    <CardDescription>
-                      Complete history of member's contributions
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="rounded-md border">
-                      <div className="grid grid-cols-12 p-3 bg-muted text-xs font-medium">
-                        <div className="col-span-3">Date</div>
-                        <div className="col-span-3">Type</div>
-                        <div className="col-span-3">Amount</div>
-                        <div className="col-span-3 text-right">Status</div>
-                      </div>
-                      
-                      {/* Mock contribution data */}
-                      {[...Array(5)].map((_, index) => (
-                        <div key={index} className="grid grid-cols-12 p-3 border-t">
-                          <div className="col-span-3 text-sm">
-                            {new Date(2023, 5 - index, 15).toLocaleDateString()}
-                          </div>
-                          <div className="col-span-3 text-sm">
-                            Monthly Contribution
-                          </div>
-                          <div className="col-span-3 text-sm font-medium">
-                            KES 3,000
-                          </div>
-                          <div className="col-span-3 text-right">
-                            <Badge className={`
-                              ${index < 4 ? "bg-success text-success-foreground" : "bg-warning text-warning-foreground"}
-                            `}>
-                              {index < 4 ? "Paid" : "Pending"}
-                            </Badge>
-                          </div>
-                        </div>
+                <div className="flex items-center gap-1">
+                  {[1, 2, 3, 4, 5].map((starRating) => (
+                    <Star
+                      key={starRating}
+                      className={`h-4 w-4 ${(member.rating ?? 0) >= starRating ? 'text-yellow-500' : 'text-gray-300'}`}
+                    />
                       ))}
                     </div>
                   </CardContent>
                 </Card>
-              </TabsContent>
-              
-              <TabsContent value="attendance">
-                <Card>
-                  <CardHeader className="pb-3">
-                    <CardTitle>Meeting Attendance</CardTitle>
-                    <CardDescription>
-                      Record of member's attendance at chama meetings
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="rounded-md border">
-                      <div className="grid grid-cols-12 p-3 bg-muted text-xs font-medium">
-                        <div className="col-span-3">Date</div>
-                        <div className="col-span-5">Meeting</div>
-                        <div className="col-span-4 text-right">Status</div>
-                      </div>
-                      
-                      {/* Mock attendance data */}
-                      {[...Array(5)].map((_, index) => (
-                        <div key={index} className="grid grid-cols-12 p-3 border-t">
-                          <div className="col-span-3 text-sm">
-                            {new Date(2023, 6 - index, 15).toLocaleDateString()}
-                          </div>
-                          <div className="col-span-5 text-sm">
-                            {index % 2 === 0 ? "Monthly General Meeting" : "Special Investment Meeting"}
-                          </div>
-                          <div className="col-span-4 text-right">
-                            <Badge className={`
-                              ${index !== 2 ? "bg-success text-success-foreground" : "bg-destructive text-destructive-foreground"}
-                            `}>
-                              {index !== 2 ? "Present" : "Absent"}
-                            </Badge>
-                          </div>
-                        </div>
                       ))}
                     </div>
-                  </CardContent>
-                </Card>
-              </TabsContent>
-              
-              <TabsContent value="permissions">
-                <Card>
-                  <CardHeader className="pb-3">
-                    <CardTitle>Role & Permissions</CardTitle>
-                    <CardDescription>
-                      Manage member's role and access rights
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-6">
-                      <div>
-                        <h3 className="text-sm font-medium mb-2">Current Role</h3>
-                        <Select defaultValue={selectedMember.role}>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select role" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="member">Regular Member</SelectItem>
-                            <SelectItem value="secretary">Secretary</SelectItem>
-                            <SelectItem value="treasurer">Treasurer</SelectItem>
-                            <SelectItem value="chairperson">Chairperson</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      
-                      <div>
-                        <h3 className="text-sm font-medium mb-2">Permissions</h3>
-                        <div className="space-y-4">
-                          {[
-                            {
-                              name: "View Financial Reports",
-                              icon: <BarChart4 className="h-4 w-4" />,
-                              allowed: true
-                            },
-                            {
-                              name: "Manage Contributions",
-                              icon: <DollarSign className="h-4 w-4" />,
-                              allowed: selectedMember.role === "treasurer" || selectedMember.role === "chairperson"
-                            },
-                            {
-                              name: "Schedule Meetings",
-                              icon: <Calendar className="h-4 w-4" />,
-                              allowed: selectedMember.role === "secretary" || selectedMember.role === "chairperson"
-                            },
-                            {
-                              name: "Manage Members",
-                              icon: <Users className="h-4 w-4" />,
-                              allowed: selectedMember.role === "chairperson"
-                            },
-                            {
-                              name: "Access Admin Settings",
-                              icon: <ShieldAlert className="h-4 w-4" />,
-                              allowed: selectedMember.role === "chairperson"
-                            }
-                          ].map((permission, index) => (
-                            <div key={index} className="flex justify-between items-center">
-                              <div className="flex items-center gap-2">
-                                {permission.icon}
-                                <span>{permission.name}</span>
-                              </div>
-                              <Badge variant={permission.allowed ? "default" : "secondary"}>
-                                {permission.allowed ? "Allowed" : "Restricted"}
-                              </Badge>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
+
+        {selectedMember && (
+          <MemberDetails
+            member={selectedMember}
+            chamaId={chamaId}
+            isOpen={isDetailsOpen}
+            onClose={() => {
+              setIsDetailsOpen(false);
+              setSelectedMember(null);
+            }}
+          />
+        )}
+
+        <AddMemberDialog
+          open={openAddMemberDialog}
+          onOpenChange={setOpenAddMemberDialog}
+          chamaId={chamaId}
+        />
                     </div>
-                  </CardContent>
-                  <CardFooter className="flex justify-between border-t pt-4">
-                    <Button variant="outline">
-                      Reset to Default
-                    </Button>
-                    <Button>
-                      Save Changes
-                    </Button>
-                  </CardFooter>
-                </Card>
-              </TabsContent>
-            </Tabs>
-            
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setIsDetailsOpen(false)}>
-                Close
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      )}
     </ChamaLayout>
   );
 }

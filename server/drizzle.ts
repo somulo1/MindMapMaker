@@ -1,10 +1,16 @@
-import { drizzle } from "drizzle-orm/postgres-js";
-import postgres from "postgres";
+import { drizzle } from 'drizzle-orm/better-sqlite3';
+import Database from 'better-sqlite3';
+import path from 'path';
 
-const connectionString = process.env.DATABASE_URL || "postgres://postgres:postgres@localhost:5432/mindmapmaker";
+let db: ReturnType<typeof drizzle> | null = null;
 
-// Create a new postgres client
-const client = postgres(connectionString);
+export async function getDrizzle() {
+  if (db) return db;
+  
+  const sqlite = new Database(path.join(process.cwd(), 'data', 'chama.db'));
+  db = drizzle(sqlite);
+  return db;
+}
 
-// Create a drizzle database instance
-export const db = drizzle(client); 
+// Initialize the database connection
+getDrizzle().catch(err => console.error('Error initializing Drizzle:', err)); 

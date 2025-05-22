@@ -1,43 +1,46 @@
 import { Request, Response } from "express";
 import { storage } from "../storage";
-import { prisma } from "../db";
-import { BadRequestError } from "../utils/errors";
 
 // Add item to cart
 export async function addToCart(req: Request, res: Response) {
   const userId = (req.user as any).id;
-  const { itemId, quantity } = req.body;
+  const { itemId, quantity = 1 } = req.body;
 
-  // Validate input
-  if (!itemId || !quantity || quantity < 1) {
-    return res.status(400).json({ message: "Invalid input" });
-  }
+  try {
+    // Validate input
+    if (!itemId || !quantity || quantity < 1) {
+      return res.status(400).json({ message: "Invalid input" });
+    }
 
-  // Check if item exists and has enough quantity
-  const item = await storage.getMarketplaceItem(itemId);
-  if (!item) {
-    return res.status(404).json({ message: "Item not found" });
-  }
+    // Check if item exists and has enough quantity
+    const item = await storage.getMarketplaceItem(itemId);
+    if (!item) {
+      return res.status(404).json({ message: "Item not found" });
+    }
 
-  if (item.quantity < quantity) {
-    return res.status(400).json({ message: "Not enough items in stock" });
-  }
-
-  // Check if item is already in cart
-  const existingCartItem = await storage.getCartItem(userId, itemId);
-  if (existingCartItem) {
-    // Update quantity if item exists
-    const newQuantity = existingCartItem.quantity + quantity;
-    if (item.quantity < newQuantity) {
+    if (item.quantity < quantity) {
       return res.status(400).json({ message: "Not enough items in stock" });
     }
-    const updatedCartItem = await storage.updateCartItem(userId, itemId, { quantity: newQuantity });
-    return res.status(200).json({ message: "Cart updated", item: updatedCartItem });
-  }
 
-  // Add to cart
-  const cartItem = await storage.addToCart(userId, itemId, quantity);
-  return res.status(201).json({ message: "Item added to cart", item: cartItem });
+    // Check if item is already in cart
+    const existingCartItem = await storage.getCartItem(userId, itemId);
+    if (existingCartItem) {
+      // Update quantity if item exists
+      const newQuantity = existingCartItem.quantity + quantity;
+      if (item.quantity < newQuantity) {
+        return res.status(400).json({ message: "Not enough items in stock" });
+      }
+      const updatedCartItem = await storage.updateCartItem(userId, itemId, { quantity: newQuantity });
+      return res.status(200).json({ message: "Cart updated", item: updatedCartItem });
+    }
+
+    // Add to cart
+    const cartItem = await storage.addToCart(userId, itemId, quantity);
+    return res.status(201).json({ message: "Item added to cart", item: cartItem });
+  } catch (error) {
+    console.error('Error adding to cart:', error);
+    return res.status(500).json({ message: "Failed to add item to cart" });
+  }
 }
 
 // Remove item from cart
@@ -45,71 +48,95 @@ export async function removeFromCart(req: Request, res: Response) {
   const userId = (req.user as any).id;
   const itemId = parseInt(req.params.itemId);
 
-  // Check if item exists in cart
-  const cartItem = await storage.getCartItem(userId, itemId);
-  if (!cartItem) {
-    return res.status(404).json({ message: "Item not found in cart" });
-  }
+  try {
+    // Check if item exists in cart
+    const cartItem = await storage.getCartItem(userId, itemId);
+    if (!cartItem) {
+      return res.status(404).json({ message: "Item not found in cart" });
+    }
 
-  // Remove from cart
-  await storage.removeFromCart(userId, itemId);
-  return res.status(200).json({ message: "Item removed from cart" });
+    // Remove from cart
+    await storage.removeFromCart(userId, itemId);
+    return res.status(200).json({ message: "Item removed from cart" });
+  } catch (error) {
+    console.error('Error removing from cart:', error);
+    return res.status(500).json({ message: "Failed to remove item from cart" });
+  }
 }
 
 // Update cart item quantity
 export async function updateCartItem(req: Request, res: Response) {
   const userId = (req.user as any).id;
-  const itemId = parseInt(req.params.itemId);
-  const { quantity } = req.body;
+  const { itemId, quantity } = req.body;
 
-  // Validate input
-  if (!quantity || quantity < 1) {
-    return res.status(400).json({ message: "Invalid quantity" });
+  try {
+    // Validate input
+    if (!quantity || quantity < 1) {
+      return res.status(400).json({ message: "Invalid quantity" });
+    }
+
+    // Check if item exists in cart
+    const cartItem = await storage.getCartItem(userId, itemId);
+    if (!cartItem) {
+      return res.status(404).json({ message: "Item not found in cart" });
+    }
+
+    // Check if enough items in stock
+    const item = await storage.getMarketplaceItem(itemId);
+    if (!item || item.quantity < quantity) {
+      return res.status(400).json({ message: "Not enough items in stock" });
+    }
+
+    // Update cart item
+    const updatedCartItem = await storage.updateCartItem(userId, itemId, { quantity });
+    return res.status(200).json({ message: "Cart updated", item: updatedCartItem });
+  } catch (error) {
+    console.error('Error updating cart:', error);
+    return res.status(500).json({ message: "Failed to update cart item" });
   }
-
-  // Check if item exists in cart
-  const cartItem = await storage.getCartItem(userId, itemId);
-  if (!cartItem) {
-    return res.status(404).json({ message: "Item not found in cart" });
-  }
-
-  // Check if enough items in stock
-  const item = await storage.getMarketplaceItem(itemId);
-  if (!item || item.quantity < quantity) {
-    return res.status(400).json({ message: "Not enough items in stock" });
-  }
-
-  // Update cart item
-  const updatedCartItem = await storage.updateCartItem(userId, itemId, { quantity });
-  return res.status(200).json({ message: "Cart updated", item: updatedCartItem });
 }
 
 // Get user's cart
 export async function getUserCart(req: Request, res: Response) {
   const userId = (req.user as any).id;
 
-  const cartItems = await storage.getUserCart(userId);
-  
-  // Get full item details for each cart item
-  const itemsWithDetails = await Promise.all(
-    cartItems.map(async (cartItem) => {
-      const item = await storage.getMarketplaceItem(cartItem.itemId);
-      const seller = item ? await storage.getUser(item.sellerId) : null;
-      
-      return {
-        ...item,
-        quantity: cartItem.quantity,
-        seller: seller ? {
-          id: seller.id,
-          username: seller.username,
-          fullName: seller.fullName,
-          profilePic: seller.profilePic
-        } : null
-      };
-    })
-  );
+  try {
+    const cartItems = await storage.getUserCart(userId);
+    
+    // Get full item details for each cart item
+    const itemsWithDetails = await Promise.all(
+      cartItems.map(async (cartItem) => {
+        const item = await storage.getMarketplaceItem(cartItem.itemId);
+        const seller = item ? await storage.getUser(item.sellerId) : null;
+        
+        return {
+          id: cartItem.id,
+          itemId: cartItem.itemId,
+          quantity: cartItem.quantity,
+          title: item?.title || '',
+          price: item?.price || 0,
+          currency: item?.currency || 'KES',
+          imageUrl: item?.imageUrl,
+          seller: seller ? {
+            id: seller.id,
+            username: seller.username,
+            fullName: seller.fullName,
+            profilePic: seller.profilePic
+          } : null
+        };
+      })
+    );
 
-  return res.status(200).json({ items: itemsWithDetails });
+    const total = itemsWithDetails.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+
+    return res.status(200).json({ 
+      items: itemsWithDetails,
+      total
+    });
+  } catch (error) {
+    console.error('Error fetching cart:', error);
+    return res.status(500).json({ message: "Failed to fetch cart items" });
+  }
 }
 
 // Checkout cart
@@ -138,6 +165,7 @@ export async function checkoutCart(req: Request, res: Response) {
     // Calculate total amount and validate items
     let totalAmount = 0;
     const orderItems = [];
+    const itemsToUpdate = new Map();
 
     for (const cartItem of cartItems) {
       const item = await storage.getMarketplaceItem(cartItem.itemId);
@@ -145,6 +173,13 @@ export async function checkoutCart(req: Request, res: Response) {
         return res.status(400).json({ 
           success: false, 
           message: `Item ${cartItem.itemId} not found` 
+        });
+      }
+
+      if (!item.isActive) {
+        return res.status(400).json({
+          success: false,
+          message: `Item ${item.title} is no longer available`
         });
       }
 
@@ -179,7 +214,13 @@ export async function checkoutCart(req: Request, res: Response) {
         itemId: item.id,
         quantity: cartItem.quantity,
         price: item.price,
-        sellerId: seller.id
+        sellerId: seller.id,
+        sellerWalletId: sellerWallet.id
+      });
+
+      itemsToUpdate.set(item.id, {
+        currentQuantity: item.quantity,
+        orderQuantity: cartItem.quantity
       });
     }
 
@@ -191,35 +232,43 @@ export async function checkoutCart(req: Request, res: Response) {
       });
     }
 
+    // Verify quantities again and lock items
+    for (const [itemId, quantities] of itemsToUpdate) {
+      const item = await storage.getMarketplaceItem(itemId);
+      if (!item || !item.isActive || item.quantity < quantities.orderQuantity) {
+        return res.status(400).json({
+          success: false,
+          message: `Item ${item?.title || itemId} is no longer available in the requested quantity`
+        });
+      }
+    }
+
+    // Create order first
+    const order = await storage.createOrder(userId, totalAmount, orderItems);
+
     // Process each order item
     for (const orderItem of orderItems) {
-      // Update item quantity
-      const item = await storage.getMarketplaceItem(orderItem.itemId);
-      if (item) {
-        await storage.updateMarketplaceItem(item.id, {
-          quantity: item.quantity - orderItem.quantity,
-          status: item.quantity === orderItem.quantity ? 'SOLD' : 'ACTIVE'
-        });
-      }
+      // Create transaction record for payment
+      await storage.createTransaction({
+        userId,
+        type: 'transfer',
+        amount: orderItem.price * orderItem.quantity,
+        description: `Payment for order #${order.id}`,
+        sourceWallet: wallet.id,
+        destinationWallet: orderItem.sellerWalletId,
+        status: 'pending'
+      });
 
-      // Transfer money to seller
-      const sellerWallet = await storage.getUserWallet(orderItem.sellerId);
-      if (sellerWallet) {
-        await storage.updateWallet(sellerWallet.id, {
-          balance: sellerWallet.balance + (orderItem.price * orderItem.quantity)
-        });
-
-        // Create transaction record
-        await storage.createTransaction({
-          userId: userId,
-          type: 'MARKETPLACE',
-          amount: orderItem.price * orderItem.quantity,
-          description: `Purchase of ${item?.title || 'item'}`,
-          sourceWallet: wallet.id,
-          destinationWallet: sellerWallet.id,
-          status: 'COMPLETED'
-        });
-      }
+      // Create transaction record for seller
+      await storage.createTransaction({
+        userId: orderItem.sellerId,
+        type: 'transfer',
+        amount: orderItem.price * orderItem.quantity,
+        description: `Sale payment for order #${order.id}`,
+        sourceWallet: null,
+        destinationWallet: orderItem.sellerWalletId,
+        status: 'completed'
+      });
     }
 
     // Update buyer's wallet
@@ -227,8 +276,15 @@ export async function checkoutCart(req: Request, res: Response) {
       balance: wallet.balance - totalAmount
     });
 
-    // Create order
-    const order = await storage.createOrder(userId, totalAmount, orderItems);
+    // Update sellers' wallets
+    for (const orderItem of orderItems) {
+      const sellerWallet = await storage.getUserWallet(orderItem.sellerId);
+      if (sellerWallet) {
+        await storage.updateWallet(sellerWallet.id, {
+          balance: sellerWallet.balance + (orderItem.price * orderItem.quantity)
+        });
+      }
+    }
 
     // Clear cart
     await storage.clearUserCart(userId);

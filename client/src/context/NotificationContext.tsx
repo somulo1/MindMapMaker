@@ -1,13 +1,32 @@
 import React, { createContext, useContext, useState, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Notification } from '@shared/schema';
+import { ChamaInvitation } from '@shared/schema';
+import { apiRequest } from '@/lib/queryClient';
+
+interface InvitationWithDetails {
+  id: number;
+  chamaId: number;
+  role: string;
+  status: string;
+  invitedAt: string;
+  chama: {
+    id: number;
+    name: string;
+    icon: string;
+    iconBg: string;
+  };
+  invitedByUser: {
+    id: number;
+    fullName: string;
+  };
+}
 
 interface NotificationContextType {
   isOpen: boolean;
   openNotifications: () => void;
   closeNotifications: () => void;
   unreadCount: number;
-  notifications: Notification[];
+  notifications: InvitationWithDetails[];
   isLoading: boolean;
 }
 
@@ -16,9 +35,18 @@ const NotificationContext = createContext<NotificationContextType | undefined>(u
 export function NotificationProvider({ children }: { children: React.ReactNode }) {
   const [isOpen, setIsOpen] = useState(false);
 
-  const { data: notifications = [], isLoading } = useQuery<Notification[]>({
-    queryKey: ['/api/notifications'],
+  const { data: invitationsResponse, isLoading } = useQuery<{ invitations: InvitationWithDetails[] }>({
+    queryKey: ['/api/invitations'],
+    queryFn: async () => {
+      const response = await apiRequest('GET', '/api/invitations');
+      return response.json();
+    },
+    refetchInterval: 30000, // Refetch every 30 seconds
+    refetchOnWindowFocus: true,
+    staleTime: 10000 // Consider data stale after 10 seconds
   });
+
+  const notifications = invitationsResponse?.invitations || [];
 
   const openNotifications = useCallback(() => {
     setIsOpen(true);
@@ -28,7 +56,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     setIsOpen(false);
   }, []);
 
-  const unreadCount = notifications.filter(n => !n.read).length;
+  const unreadCount = notifications.filter(n => n.status === 'pending').length;
 
   return (
     <NotificationContext.Provider

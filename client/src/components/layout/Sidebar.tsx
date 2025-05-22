@@ -13,6 +13,7 @@ import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Chama } from "@shared/schema";
 import { MdEmojiPeople } from "react-icons/md";
+import { apiRequest } from "@/lib/queryClient";
 
 interface SidebarProps {
   isOpen: boolean;
@@ -20,19 +21,31 @@ interface SidebarProps {
 }
 
 export default function Sidebar({ isOpen, closeSidebar }: SidebarProps) {
-  const { user, logout } = useAuth();
+  const { user, logoutMutation } = useAuth();
   const [location] = useLocation();
   const [isMobile, setIsMobile] = useState(false);
 
-  const { data: chamas = [] } = useQuery<Chama[]>({
+  const { data: chamasResponse } = useQuery<{ chamas: Chama[] }>({
     queryKey: ["/api/chamas"],
+    queryFn: async () => {
+      const response = await apiRequest("GET", "/api/chamas");
+      return response.json();
+    },
     enabled: !!user
   });
 
-  const { data: wallet = { balance: "0.00" } } = useQuery<{ wallet: { balance: number, currency: string } }>({
+  const chamas = chamasResponse?.chamas || [];
+
+  const { data: walletResponse } = useQuery<{ wallet: { balance: number, currency: string } }>({
     queryKey: ["/api/wallets/user"],
+    queryFn: async () => {
+      const response = await apiRequest("GET", "/api/wallets/user");
+      return response.json();
+    },
     enabled: !!user
   });
+
+  const wallet = walletResponse?.wallet || { balance: 0, currency: "KES" };
 
   useEffect(() => {
     const checkMobile = () => {
@@ -53,14 +66,6 @@ export default function Sidebar({ isOpen, closeSidebar }: SidebarProps) {
   const handleLinkClick = () => {
     if (isMobile) {
       closeSidebar();
-    }
-  };
-
-  const handleLogout = async () => {
-    try {
-      await logout();
-    } catch (error) {
-      console.error('Logout failed:', error);
     }
   };
 
@@ -121,7 +126,7 @@ export default function Sidebar({ isOpen, closeSidebar }: SidebarProps) {
             <div className="bg-muted rounded-md p-2">
               <p className="text-xs text-muted-foreground">Wallet Balance</p>
               <p className="font-mono text-sm font-medium">
-                KES {wallet?.wallet?.balance?.toFixed(2) || "0.00"}
+                {wallet.currency} {wallet.balance.toFixed(2)}
               </p>
             </div>
           </div>
@@ -154,7 +159,8 @@ export default function Sidebar({ isOpen, closeSidebar }: SidebarProps) {
                   My Wallet
                 </Button>
               </Link>
-              <Link to="/Learning" onClick={handleLinkClick}>
+
+              <Link to="/learning" onClick={handleLinkClick}>
                 <Button 
                   variant={isActive("/learning") ? "secondary" : "ghost"} 
                   className="w-full justify-start"
@@ -163,6 +169,7 @@ export default function Sidebar({ isOpen, closeSidebar }: SidebarProps) {
                   Learning
                 </Button>
               </Link>
+
               <Link to="/ai-assistant" onClick={handleLinkClick}>
                 <Button 
                   variant={isActive("/ai-assistant") ? "secondary" : "ghost"} 
@@ -193,51 +200,61 @@ export default function Sidebar({ isOpen, closeSidebar }: SidebarProps) {
                   <Badge className="ml-auto bg-accent text-white">2</Badge>
                 </Button>
               </Link>
-              <Link to="/chamas" onClick={handleLinkClick}>
+
+              {/* Chamas Section */}
+              <p className="px-2 pt-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                My Chamas
+              </p>
+
+              {Array.isArray(chamas) && chamas.map((chama) => (
+                <Link key={chama.id} to={`/chamas/${chama.id}`} onClick={handleLinkClick}>
+                  <Button 
+                    variant={isActive(`/chamas/${chama.id}`) ? "secondary" : "ghost"} 
+                    className="w-full justify-start"
+                  >
+                    <Building2 className="mr-2 h-4 w-4" />
+                    {chama.name}
+                    {chamaRoleBadge(chama.role)}
+                  </Button>
+                </Link>
+              ))}
+
+              <Link to="/chamas/create" onClick={handleLinkClick}>
                 <Button 
-                  variant={isActive("/chamas") ? "secondary" : "ghost"} 
-                  className="w-full justify-start"
+                  variant="ghost" 
+                  className="w-full justify-start text-muted-foreground"
                 >
-                  <Users className="mr-2 h-4 w-4" />
-                  Chamas
-                  <Badge className="ml-auto bg-accent text-white">2</Badge>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Create New Chama
                 </Button>
               </Link>
-                           
-              {/* Admin Section - Only for admin users */}
-              {user?.role === "admin" && (
-                <>
-                  <p className="px-2 pt-6 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                    Admin
-                  </p>
-                  <Link to="/admin" onClick={handleLinkClick}>
-                    <Button 
-                      variant={isActive("/admin") ? "secondary" : "ghost"} 
-                      className="w-full justify-start"
-                    >
-                      <UserCog className="mr-2 h-4 w-4" />
-                      Admin Dashboard
-                    </Button>
-                  </Link>
-                </>
-              )}
+
+              {/* Settings Section */}
+              <p className="px-2 pt-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                Settings
+              </p>
+
+              <Link to="/settings" onClick={handleLinkClick}>
+                <Button 
+                  variant={isActive("/settings") ? "secondary" : "ghost"} 
+                  className="w-full justify-start"
+                >
+                  <Settings className="mr-2 h-4 w-4" />
+                  Settings
+                </Button>
+              </Link>
+
+              <Button 
+                variant="ghost" 
+                className="w-full justify-start text-destructive hover:text-destructive hover:bg-destructive/10"
+                onClick={() => logoutMutation.mutate()}
+              >
+                <LogOut className="mr-2 h-4 w-4" />
+                Sign Out
+              </Button>
             </div>
           </nav>
         </ScrollArea>
-        
-        {/* Settings & Logout */}
-        <div className="p-4 border-t border-border">
-          <Link to="/settings" onClick={handleLinkClick}>
-            <Button variant="ghost" className="w-full justify-start">
-              <Settings className="mr-2 h-4 w-4" />
-              Settings
-            </Button>
-          </Link>
-          <Button variant="ghost" className="w-full justify-start text-destructive hover:text-destructive" onClick={handleLogout}>
-            <LogOut className="mr-2 h-4 w-4" />
-            Sign Out
-          </Button>
-        </div>
       </div>
     </div>
   );

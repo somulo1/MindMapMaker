@@ -45,6 +45,7 @@ import AIAssistant from "@/components/dashboard/AIAssistant";
 import UserLayout from "@/components/layout/UserLayout";
 import MyCartPage from "./pages/user/MyCartPage";
 import MyWishlistPage from "./pages/user/MyWishlistPage";
+import EditItemPage from "./pages/marketplace/EditItemPage";
 
 function AuthenticatedRoutes() {
   return (
@@ -91,6 +92,9 @@ function AuthenticatedRoutes() {
       </Route>
       <Route path="/marketplace/:id">
         {(params) => <ProductDetailPage id={params.id} />}
+      </Route>
+      <Route path="/marketplace/:id/edit">
+        {(params) => <EditItemPage id={params.id} />}
       </Route>
       <Route path="/learning">
         <LearningHubPage />

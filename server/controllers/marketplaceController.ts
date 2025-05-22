@@ -90,3 +90,64 @@ export async function createMarketplaceItem(req: Request, res: Response) {
     item: newItem
   });
 }
+
+// Delete marketplace item
+export async function deleteMarketplaceItem(req: Request, res: Response) {
+  const userId = (req.user as any).id;
+  const itemId = parseInt(req.params.id);
+
+  // Check if item exists and belongs to the seller
+  const item = await storage.getMarketplaceItem(itemId);
+  if (!item) {
+    return res.status(404).json({ message: "Item not found" });
+  }
+
+  // Verify ownership
+  if (item.sellerId !== userId) {
+    return res.status(403).json({ message: "You can only delete your own items" });
+  }
+
+  // Delete the item
+  await storage.deleteMarketplaceItem(itemId);
+  
+  return res.status(200).json({ message: "Item deleted successfully" });
+}
+
+// Update marketplace item
+export async function updateMarketplaceItem(req: Request, res: Response) {
+  const userId = (req.user as any).id;
+  const itemId = parseInt(req.params.id);
+
+  // Check if item exists and belongs to the seller
+  const item = await storage.getMarketplaceItem(itemId);
+  if (!item) {
+    return res.status(404).json({ message: "Item not found" });
+  }
+
+  // Verify ownership
+  if (item.sellerId !== userId) {
+    return res.status(403).json({ message: "You can only update your own items" });
+  }
+
+  // Validate update data
+  const validatedData = insertMarketplaceItemSchema.partial().parse({
+    ...req.body,
+    sellerId: userId
+  });
+
+  // If updating chama association, verify membership
+  if (validatedData.chamaId) {
+    const membership = await storage.getChamaMember(validatedData.chamaId, userId);
+    if (!membership) {
+      return res.status(403).json({ message: "You are not a member of this chama" });
+    }
+  }
+
+  // Update the item
+  const updatedItem = await storage.updateMarketplaceItem(itemId, validatedData);
+  
+  return res.status(200).json({
+    message: "Item updated successfully",
+    item: updatedItem
+  });
+}

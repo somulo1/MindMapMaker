@@ -11,14 +11,15 @@ import {
   wishlistItems, type WishlistItem,
   notifications,
   chamaInvitations, type ChamaInvitation, type InsertChamaInvitation,
-  cartItems, type CartItem,
-  orders, type Order,
-  orderItems, type OrderItem,
+  cartItems, type CartItem, type InsertCartItem,
+  orders, type Order, type InsertOrder,
+  orderItems, type OrderItem, type InsertOrderItem,
   contributions, type Contribution, type InsertContribution,
-  meetings, type Meeting, type InsertMeeting
-} from "@shared/schema";
-import { eq, desc, and } from "drizzle-orm";
-import { db } from "./drizzle";
+  meetings, type Meeting, type InsertMeeting,
+  mindMaps, type MindMap, type InsertMindMap
+} from "@shared/sqlite-schema";
+import { eq, desc, and, sql } from "drizzle-orm";
+import { getDrizzle } from "./drizzle";
 
 // Define storage interface
 export interface IStorage {
@@ -73,6 +74,7 @@ export interface IStorage {
   getChamaMarketplaceItems(chamaId: number): Promise<MarketplaceItem[]>;
   createMarketplaceItem(item: InsertMarketplaceItem): Promise<MarketplaceItem>;
   updateMarketplaceItem(id: number, item: Partial<MarketplaceItem>): Promise<MarketplaceItem | undefined>;
+  deleteMarketplaceItem(id: number): Promise<void>;
   
   // AI Conversations
   getAiConversation(id: number): Promise<AiConversation | undefined>;
@@ -101,881 +103,665 @@ export interface IStorage {
   getChamaMeetings(chamaId: number): Promise<Meeting[]>;
   createMeeting(data: InsertMeeting): Promise<Meeting>;
   updateMeeting(id: number, data: Partial<Meeting>): Promise<Meeting>;
+
+  // Cart methods
+  getUserCart(userId: number): Promise<CartItem[]>;
+  getCartItem(userId: number, itemId: number): Promise<CartItem | undefined>;
+  addToCart(userId: number, itemId: number, quantity: number): Promise<CartItem>;
+  updateCartItem(userId: number, itemId: number, data: Partial<CartItem>): Promise<CartItem>;
+  removeFromCart(userId: number, itemId: number): Promise<void>;
+  clearUserCart(userId: number): Promise<void>;
+  createOrder(userId: number, totalAmount: number, items: any[]): Promise<Order>;
+
+  // Chama invitation methods
+  createChamaInvitation(data: {
+    chamaId: number;
+    invitedUserId: number;
+    invitedByUserId: number;
+    role: string;
+  }): Promise<ChamaInvitation>;
+
+  getChamaInvitation(chamaId: number, userId: number): Promise<ChamaInvitation | undefined>;
+
+  getChamaInvitationById(invitationId: number): Promise<ChamaInvitation | undefined>;
+
+  updateChamaInvitation(invitationId: number, data: {
+    status: string;
+    respondedAt: Date;
+  } | any, tx?: any): Promise<ChamaInvitation>;
+
+  getChamaInvitations(chamaId: number): Promise<any[]>;
+
+  getUserChamaInvitations(userId: number): Promise<any[]>;
+
+  getUserNotifications(userId: number): Promise<any[]>;
+
+  getNotification(id: number): Promise<any>;
+
+  updateNotification(id: number, data: Partial<typeof notifications.$inferInsert>): Promise<any>;
+
+  createNotification(data: {
+    userId: number;
+    type: string;
+    title: string;
+    content: string;
+    relatedId?: number;
+  }, tx?: any): Promise<any>;
 }
 
-export class MemStorage implements IStorage {
-  private users: Map<number, User>;
-  private chamas: Map<number, Chama>;
-  private chamaMembers: Map<number, ChamaMember>;
-  private wallets: Map<number, Wallet>;
-  private transactions: Map<number, Transaction>;
-  private messages: Map<number, Message>;
-  private learningResources: Map<number, LearningResource>;
-  private marketplaceItems: Map<number, MarketplaceItem>;
-  private aiConversations: Map<number, AiConversation>;
-  private wishlistItems: Map<number, WishlistItem>;
-  private cartItems: Map<number, CartItem>;
-  private orders: Map<number, Order>;
-  private orderItems: Map<number, OrderItem>;
-  private contributions: Map<number, Contribution>;
-  private meetings: Map<number, Meeting> = new Map();
-  
-  private userIdCounter: number;
-  private chamaIdCounter: number;
-  private chamaMemberIdCounter: number;
-  private walletIdCounter: number;
-  private transactionIdCounter: number;
-  private messageIdCounter: number;
-  private learningResourceIdCounter: number;
-  private marketplaceItemIdCounter: number;
-  private aiConversationIdCounter: number;
-  private wishlistItemIdCounter: number = 1;
-  private cartItemIdCounter: number = 1;
-  private orderIdCounter: number = 1;
-  private orderItemIdCounter: number = 1;
-  private contributionIdCounter: number = 1;
-  private meetingIdCounter = 1;
-
-  constructor() {
-    this.users = new Map();
-    this.chamas = new Map();
-    this.chamaMembers = new Map();
-    this.wallets = new Map();
-    this.transactions = new Map();
-    this.messages = new Map();
-    this.learningResources = new Map();
-    this.marketplaceItems = new Map();
-    this.aiConversations = new Map();
-    this.wishlistItems = new Map();
-    this.cartItems = new Map();
-    this.orders = new Map();
-    this.orderItems = new Map();
-    this.contributions = new Map();
-    
-    this.userIdCounter = 1;
-    this.chamaIdCounter = 1;
-    this.chamaMemberIdCounter = 1;
-    this.walletIdCounter = 1;
-    this.transactionIdCounter = 1;
-    this.messageIdCounter = 1;
-    this.learningResourceIdCounter = 1;
-    this.marketplaceItemIdCounter = 1;
-    this.aiConversationIdCounter = 1;
-    
-    // Add some initial learning resources
-    this.seedLearningResources();
-  }
-
-  // Seed initial learning resources
-  private seedLearningResources() {
-    const resources: InsertLearningResource[] = [
-      {
-        title: "Financial Literacy 101",
-        description: "Learn the fundamentals of managing personal finances",
-        category: "basics",
-        type: "article",
-        duration: 12,
-        imageUrl: "https://images.unsplash.com/photo-1554224155-6726b3ff858f?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&h=400&q=80",
-        content: "Introduction to financial literacy content here..."
-      },
-      {
-        title: "Smart Investment Strategies",
-        description: "Diversify your portfolio with these proven approaches",
-        category: "intermediate",
-        type: "video",
-        duration: 8,
-        imageUrl: "https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&h=400&q=80",
-        content: "Investment strategies video content link here..."
-      },
-      {
-        title: "Business Planning Guide",
-        description: "Create a solid business plan for your new venture",
-        category: "advanced",
-        type: "tutorial",
-        duration: 20,
-        imageUrl: "https://images.unsplash.com/photo-1664575599736-c5197c684128?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&h=400&q=80",
-        content: "Business planning tutorial content here..."
-      }
-    ];
-    
-    resources.forEach(resource => {
-      this.createLearningResource(resource);
-    });
-  }
-
-  // Users
+export class SQLiteStorage implements IStorage {
   async getUser(id: number): Promise<User | undefined> {
-    return this.users.get(id);
+    const db = await getDrizzle();
+    const result = await db.select().from(users).where(eq(users.id, id));
+    return result[0];
   }
 
   async getUserByUsername(username: string): Promise<User | undefined> {
-    return Array.from(this.users.values()).find(user => user.username === username);
+    const db = await getDrizzle();
+    const result = await db.select().from(users).where(eq(users.username, username));
+    return result[0];
   }
 
   async getUserByEmail(email: string): Promise<User | undefined> {
-    return Array.from(this.users.values()).find(user => user.email === email);
+    const db = await getDrizzle();
+    const result = await db.select().from(users).where(eq(users.email, email));
+    return result[0];
   }
 
   async createUser(insertUser: InsertUser): Promise<User> {
-    const id = this.userIdCounter++;
-    const now = new Date();
-    const user: User = {
-      ...insertUser,
-      id,
-      role: "user",
-      isActive: true,
-      lastActive: now,
-      createdAt: now,
-      profilePic: null,
-      location: null,
-      phoneNumber: null
-    };
-    this.users.set(id, user);
-    return user;
+    const db = await getDrizzle();
+    const result = await db.insert(users).values(insertUser).returning();
+    return result[0];
   }
 
   async updateUser(id: number, data: Partial<User>): Promise<User | undefined> {
-    const user = this.users.get(id);
-    if (!user) return undefined;
-
-    const updatedUser: User = {
-      ...user,
-      ...data,
-      // Don't allow updating these fields
-      id: user.id,
-      createdAt: user.createdAt,
-      // Ensure required fields have default values
-      username: data.username || user.username,
-      email: data.email || user.email,
-      password: data.password || user.password,
-      fullName: data.fullName || user.fullName,
-      role: data.role || user.role,
-      isActive: data.isActive !== undefined ? data.isActive : user.isActive,
-      lastActive: data.lastActive || user.lastActive,
-      // Handle nullable fields
-      profilePic: data.profilePic !== undefined ? data.profilePic : user.profilePic,
-      location: data.location !== undefined ? data.location : user.location,
-      phoneNumber: data.phoneNumber !== undefined ? data.phoneNumber : user.phoneNumber
-    };
-
-    this.users.set(id, updatedUser);
-    return updatedUser;
+    const db = await getDrizzle();
+    const result = await db.update(users)
+      .set(data)
+      .where(eq(users.id, id))
+      .returning();
+    return result[0];
   }
 
-  // Chamas
   async getChama(id: number): Promise<Chama | undefined> {
-    return this.chamas.get(id);
+    const db = await getDrizzle();
+    const result = await db.select().from(chamas).where(eq(chamas.id, id));
+    return result[0];
   }
 
   async getChamasByUserId(userId: number): Promise<Chama[]> {
-    const memberRecords = Array.from(this.chamaMembers.values())
-      .filter(member => member.userId === userId && member.isActive);
-    
-    return memberRecords.map(member => 
-      this.chamas.get(member.chamaId)!
-    ).filter(Boolean);
+    const db = await getDrizzle();
+    const result = await db
+      .select()
+      .from(chamas)
+      .innerJoin(chamaMembers, eq(chamas.id, chamaMembers.chamaId))
+      .where(eq(chamaMembers.userId, userId));
+    return result.map(r => r.chamas);
   }
 
   async createChama(insertChama: InsertChama): Promise<Chama> {
-    const id = this.chamaIdCounter++;
-    const now = new Date();
-    const chama: Chama = {
-      ...insertChama,
-      id,
-      memberCount: 1,
-      balance: 0,
-      establishedDate: now,
-      createdAt: now,
-      description: insertChama.description || null,
-      icon: insertChama.icon || null,
-      iconBg: insertChama.iconBg || null,
-      nextMeeting: null
-    };
-    this.chamas.set(id, chama);
-    
-    // Create a wallet for the new chama
-    await this.createWallet({ chamaId: id, currency: "KES" });
-    
-    // Add creator as a member with chairperson role
-    await this.addChamaMember({
-      chamaId: id,
-      userId: insertChama.createdBy,
-      role: "chairperson",
-      isActive: true
-    });
-    
-    return chama;
+    const db = await getDrizzle();
+    const result = await db.insert(chamas).values(insertChama).returning();
+    return result[0];
   }
 
-  async updateChama(id: number, chamaData: Partial<Chama>): Promise<Chama | undefined> {
-    const chama = await this.getChama(id);
-    if (!chama) return undefined;
-    
-    const updatedChama: Chama = { ...chama, ...chamaData };
-    this.chamas.set(id, updatedChama);
-    return updatedChama;
+  async updateChama(id: number, data: Partial<Chama>): Promise<Chama | undefined> {
+    const db = await getDrizzle();
+    const result = await db.update(chamas)
+      .set(data)
+      .where(eq(chamas.id, id))
+      .returning();
+    return result[0];
   }
 
-  // Chama members
   async getChamaMember(chamaId: number, userId: number): Promise<ChamaMember | undefined> {
-    return Array.from(this.chamaMembers.values())
-      .find(member => member.chamaId === chamaId && member.userId === userId && member.isActive === true);
+    const db = await getDrizzle();
+    const result = await db
+      .select()
+      .from(chamaMembers)
+      .where(
+        and(
+          eq(chamaMembers.chamaId, chamaId),
+          eq(chamaMembers.userId, userId)
+        )
+      );
+    return result[0];
   }
 
   async getChamaMembers(chamaId: number): Promise<ChamaMember[]> {
-    return Array.from(this.chamaMembers.values())
-      .filter(member => member.chamaId === chamaId && member.isActive === true);
-  }
-
-  async addChamaMember(insertMember: InsertChamaMember): Promise<ChamaMember> {
-    // Check if user is already a member
-    const existingMember = await this.getChamaMember(insertMember.chamaId, insertMember.userId);
-    
-    if (existingMember) {
-      // If member exists but is inactive, reactivate them
-      if (!existingMember.isActive) {
-        const updatedMember = await this.updateChamaMember(existingMember.id, {
-          isActive: true,
-          role: insertMember.role || existingMember.role
-        });
-        
-        // Update chama member count
-        const chama = await this.getChama(insertMember.chamaId);
-        if (chama) {
-          await this.updateChama(chama.id, { memberCount: chama.memberCount + 1 });
+    const db = await getDrizzle();
+    const result = await db
+      .select({
+        id: chamaMembers.id,
+        chamaId: chamaMembers.chamaId,
+        userId: chamaMembers.userId,
+        role: chamaMembers.role,
+        contributionAmount: chamaMembers.contributionAmount,
+        contributionFrequency: chamaMembers.contributionFrequency,
+        rating: chamaMembers.rating,
+        isActive: chamaMembers.isActive,
+        joinedAt: chamaMembers.joinedAt,
+        user: {
+          id: users.id,
+          username: users.username,
+          fullName: users.fullName,
+          email: users.email,
+          profilePic: users.profilePic,
+          location: users.location,
+          phoneNumber: users.phoneNumber
         }
-        
-        return updatedMember!;
-      }
-      // If member is already active, return existing member
-      return existingMember;
-    }
+      })
+      .from(chamaMembers)
+      .leftJoin(users, eq(chamaMembers.userId, users.id))
+      .where(eq(chamaMembers.chamaId, chamaId));
     
-    // If no existing member, create new one
-    const id = this.chamaMemberIdCounter++;
-    const now = new Date();
-    const member: ChamaMember = {
-      ...insertMember,
-      id,
-      role: insertMember.role || "member",
-      rating: 5,
-      joinedAt: now,
-      contributionAmount: null,
-      contributionFrequency: null,
-      isActive: insertMember.isActive ?? true
-    };
-    this.chamaMembers.set(id, member);
-    
-    // Update the member count in the chama
-    const chama = await this.getChama(insertMember.chamaId);
-    if (chama) {
-      await this.updateChama(chama.id, { memberCount: chama.memberCount + 1 });
-    }
-    
-    return member;
+    return result.map(r => ({
+      id: r.id,
+      chamaId: r.chamaId,
+      userId: r.userId,
+      role: r.role,
+      contributionAmount: r.contributionAmount,
+      contributionFrequency: r.contributionFrequency,
+      rating: r.rating,
+      isActive: r.isActive,
+      joinedAt: r.joinedAt,
+      user: r.user
+    }));
   }
 
-  async updateChamaMember(id: number, memberData: Partial<ChamaMember>): Promise<ChamaMember | undefined> {
-    const member = this.chamaMembers.get(id);
-    if (!member) return undefined;
-    
-    const updatedMember: ChamaMember = { ...member, ...memberData };
-    this.chamaMembers.set(id, updatedMember);
-    return updatedMember;
+  async addChamaMember(member: InsertChamaMember): Promise<ChamaMember> {
+    const db = await getDrizzle();
+    const result = await db.insert(chamaMembers).values(member).returning();
+    return result[0];
   }
 
-  // Wallets
+  async updateChamaMember(id: number, data: Partial<ChamaMember>): Promise<ChamaMember | undefined> {
+    const db = await getDrizzle();
+    const result = await db.update(chamaMembers)
+      .set(data)
+      .where(eq(chamaMembers.id, id))
+      .returning();
+    return result[0];
+  }
+
   async getUserWallet(userId: number): Promise<Wallet | undefined> {
-    return Array.from(this.wallets.values())
-      .find(wallet => wallet.userId === userId);
+    const db = await getDrizzle();
+    const result = await db
+      .select()
+      .from(wallets)
+      .where(eq(wallets.userId, userId));
+    return result[0];
   }
 
   async getChamaWallet(chamaId: number): Promise<Wallet | undefined> {
-    return Array.from(this.wallets.values())
-      .find(wallet => wallet.chamaId === chamaId);
+    const db = await getDrizzle();
+    const result = await db
+      .select()
+      .from(wallets)
+      .where(eq(wallets.chamaId, chamaId));
+    return result[0];
   }
 
   async createWallet(insertWallet: InsertWallet): Promise<Wallet> {
-    const id = this.walletIdCounter++;
-    const now = new Date();
-    const wallet: Wallet = {
-      ...insertWallet,
-      id,
-      balance: 0,
-      lastUpdated: now,
-      userId: insertWallet.userId || null,
-      chamaId: insertWallet.chamaId || null,
-      currency: insertWallet.currency || "KES"
-    };
-    this.wallets.set(id, wallet);
-    return wallet;
+    const db = await getDrizzle();
+    const result = await db.insert(wallets).values(insertWallet).returning();
+    return result[0];
   }
 
-  async updateWallet(id: number, walletData: Partial<Wallet>): Promise<Wallet | undefined> {
-    const wallet = this.wallets.get(id);
-    if (!wallet) return undefined;
-    
-    const updatedWallet: Wallet = {
-      ...wallet,
-      ...walletData,
-      lastUpdated: new Date()
-    };
-    this.wallets.set(id, updatedWallet);
-    return updatedWallet;
+  async updateWallet(id: number, data: Partial<Wallet>): Promise<Wallet | undefined> {
+    const db = await getDrizzle();
+    const result = await db.update(wallets)
+      .set(data)
+      .where(eq(wallets.id, id))
+      .returning();
+    return result[0];
   }
 
-  // Transactions
   async getTransaction(id: number): Promise<Transaction | undefined> {
-    return this.transactions.get(id);
+    const db = await getDrizzle();
+    const result = await db
+      .select()
+      .from(transactions)
+      .where(eq(transactions.id, id));
+    return result[0];
   }
 
   async getUserTransactions(userId: number): Promise<Transaction[]> {
-    return Array.from(this.transactions.values())
-      .filter(transaction => transaction.userId === userId)
-      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    const db = await getDrizzle();
+    return db
+      .select()
+      .from(transactions)
+      .where(eq(transactions.userId, userId))
+      .orderBy(transactions.createdAt);
   }
 
   async getChamaTransactions(chamaId: number): Promise<Transaction[]> {
-    return Array.from(this.transactions.values())
-      .filter(transaction => transaction.chamaId === chamaId)
-      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    const db = await getDrizzle();
+    return db
+      .select()
+      .from(transactions)
+      .where(eq(transactions.chamaId, chamaId))
+      .orderBy(transactions.createdAt);
   }
 
   async createTransaction(insertTransaction: InsertTransaction): Promise<Transaction> {
-    const id = this.transactionIdCounter++;
-    const now = new Date();
-    const transaction: Transaction = {
-      ...insertTransaction,
-      id,
-      createdAt: now,
-      userId: insertTransaction.userId || null,
-      chamaId: insertTransaction.chamaId || null,
-      status: insertTransaction.status || "completed",
-      description: insertTransaction.description || null,
-      sourceWallet: insertTransaction.sourceWallet || null,
-      destinationWallet: insertTransaction.destinationWallet || null
-    };
-    this.transactions.set(id, transaction);
-    
-    // Update wallet balances
-    if (transaction.sourceWallet) {
-      const sourceWallet = this.wallets.get(transaction.sourceWallet);
-      if (sourceWallet) {
-        await this.updateWallet(sourceWallet.id, {
-          balance: sourceWallet.balance - transaction.amount
-        });
-      }
-    }
-    
-    if (transaction.destinationWallet) {
-      const destWallet = this.wallets.get(transaction.destinationWallet);
-      if (destWallet) {
-        await this.updateWallet(destWallet.id, {
-          balance: destWallet.balance + transaction.amount
-        });
-      }
-    }
-    
-    // Update chama balance if it's a chama transaction
-    if (transaction.chamaId) {
-      const chamaWallet = await this.getChamaWallet(transaction.chamaId);
-      if (chamaWallet) {
-        const chama = await this.getChama(transaction.chamaId);
-        if (chama) {
-          await this.updateChama(chama.id, {
-            balance: chamaWallet.balance
-          });
-        }
-      }
-    }
-    
-    return transaction;
+    const db = await getDrizzle();
+    const result = await db.insert(transactions).values(insertTransaction).returning();
+    return result[0];
   }
 
-  // Messages
   async getMessage(id: number): Promise<Message | undefined> {
-    return this.messages.get(id);
+    const db = await getDrizzle();
+    const result = await db
+      .select()
+      .from(messages)
+      .where(eq(messages.id, id));
+    return result[0];
   }
 
   async getUserMessages(userId: number): Promise<Message[]> {
-    return Array.from(this.messages.values())
-      .filter(message => 
-        message.senderId === userId || message.receiverId === userId
+    const db = await getDrizzle();
+    return db
+      .select()
+      .from(messages)
+      .where(
+        and(
+          eq(messages.senderId, userId),
+          eq(messages.receiverId, userId)
+        )
       )
-      .sort((a, b) => b.sentAt.getTime() - a.sentAt.getTime());
+      .orderBy(messages.sentAt);
   }
 
   async getChamaMessages(chamaId: number): Promise<Message[]> {
-    return Array.from(this.messages.values())
-      .filter(message => message.chamaId === chamaId)
-      .sort((a, b) => b.sentAt.getTime() - a.sentAt.getTime());
+    const db = await getDrizzle();
+    return db
+      .select()
+      .from(messages)
+      .where(eq(messages.chamaId, chamaId))
+      .orderBy(messages.sentAt);
   }
 
   async createMessage(insertMessage: InsertMessage): Promise<Message> {
-    const id = this.messageIdCounter++;
-    const now = new Date();
-    const message: Message = {
-      ...insertMessage,
-      id,
-      isRead: false,
-      isSystemMessage: false,
-      sentAt: now,
-      itemId: insertMessage.itemId || null,
-      chamaId: insertMessage.chamaId || null,
-      receiverId: insertMessage.receiverId || null
-    };
-    this.messages.set(id, message);
-    return message;
+    const db = await getDrizzle();
+    const result = await db.insert(messages).values(insertMessage).returning();
+    return result[0];
   }
 
-  async updateMessage(id: number, messageData: Partial<Message>): Promise<Message | undefined> {
-    const message = this.messages.get(id);
-    if (!message) return undefined;
-    
-    const updatedMessage: Message = { ...message, ...messageData };
-    this.messages.set(id, updatedMessage);
-    return updatedMessage;
+  async updateMessage(id: number, data: Partial<Message>): Promise<Message | undefined> {
+    const db = await getDrizzle();
+    const result = await db.update(messages)
+      .set(data)
+      .where(eq(messages.id, id))
+      .returning();
+    return result[0];
   }
 
-  // Learning resources
   async getLearningResource(id: number): Promise<LearningResource | undefined> {
-    return this.learningResources.get(id);
+    const db = await getDrizzle();
+    const result = await db.select().from(learningResources).where(eq(learningResources.id, id));
+    return result[0];
   }
 
   async getLearningResources(): Promise<LearningResource[]> {
-    return Array.from(this.learningResources.values());
+    const db = await getDrizzle();
+    return db.select().from(learningResources).orderBy(learningResources.id);
   }
 
   async getLearningResourcesByCategory(category: string): Promise<LearningResource[]> {
-    return Array.from(this.learningResources.values())
-      .filter(resource => resource.category === category);
+    const db = await getDrizzle();
+    return db.select().from(learningResources).where(eq(learningResources.category, category)).orderBy(learningResources.id);
   }
 
   async createLearningResource(insertResource: InsertLearningResource): Promise<LearningResource> {
-    const id = this.learningResourceIdCounter++;
-    const now = new Date();
-    const resource: LearningResource = {
-      ...insertResource,
-      id,
-      createdAt: now,
-      description: insertResource.description || null,
-      content: insertResource.content || null,
-      imageUrl: insertResource.imageUrl || null,
-      duration: insertResource.duration || null
-    };
-    this.learningResources.set(id, resource);
-    return resource;
+    const db = await getDrizzle();
+    const result = await db.insert(learningResources).values(insertResource).returning();
+    return result[0];
   }
 
-  // Marketplace
   async getMarketplaceItem(id: number): Promise<MarketplaceItem | undefined> {
-    return this.marketplaceItems.get(id);
+    const db = await getDrizzle();
+    const result = await db.select().from(marketplaceItems).where(eq(marketplaceItems.id, id));
+    return result[0];
   }
 
   async getMarketplaceItems(): Promise<MarketplaceItem[]> {
-    return Array.from(this.marketplaceItems.values())
-      .filter(item => item.isActive);
+    const db = await getDrizzle();
+    return db.select().from(marketplaceItems).where(eq(marketplaceItems.isActive, true)).orderBy(marketplaceItems.id);
   }
 
   async getUserMarketplaceItems(userId: number): Promise<MarketplaceItem[]> {
-    return Array.from(this.marketplaceItems.values())
-      .filter(item => item.sellerId === userId && item.isActive);
+    const db = await getDrizzle();
+    return db.select().from(marketplaceItems).where(and(eq(marketplaceItems.sellerId, userId), eq(marketplaceItems.isActive, true))).orderBy(marketplaceItems.id);
   }
 
   async getChamaMarketplaceItems(chamaId: number): Promise<MarketplaceItem[]> {
-    return Array.from(this.marketplaceItems.values())
-      .filter(item => item.chamaId === chamaId && item.isActive);
+    const db = await getDrizzle();
+    return db.select().from(marketplaceItems).where(and(eq(marketplaceItems.chamaId, chamaId), eq(marketplaceItems.isActive, true))).orderBy(marketplaceItems.id);
   }
 
   async createMarketplaceItem(insertItem: InsertMarketplaceItem): Promise<MarketplaceItem> {
-    const id = this.marketplaceItemIdCounter++;
-    const now = new Date();
-    const item: MarketplaceItem = {
-      ...insertItem,
-      id,
-      isActive: true,
-      createdAt: now,
-      location: insertItem.location || null,
-      description: insertItem.description || null,
-      chamaId: insertItem.chamaId || null,
-      imageUrl: insertItem.imageUrl || null,
-      category: insertItem.category || null,
-      condition: insertItem.condition || null,
-      currency: insertItem.currency || "KES",
-      quantity: insertItem.quantity || 1
-    };
-    this.marketplaceItems.set(id, item);
-    return item;
+    const db = await getDrizzle();
+    const result = await db.insert(marketplaceItems).values(insertItem).returning();
+    return result[0];
   }
 
-  async updateMarketplaceItem(id: number, itemData: Partial<MarketplaceItem>): Promise<MarketplaceItem | undefined> {
-    const item = this.marketplaceItems.get(id);
-    if (!item) return undefined;
-    
-    const updatedItem: MarketplaceItem = { ...item, ...itemData };
-    this.marketplaceItems.set(id, updatedItem);
-    return updatedItem;
+  async updateMarketplaceItem(id: number, data: Partial<MarketplaceItem>): Promise<MarketplaceItem | undefined> {
+    const db = await getDrizzle();
+    const result = await db.update(marketplaceItems)
+      .set(data)
+      .where(eq(marketplaceItems.id, id))
+      .returning();
+    return result[0];
   }
 
-  // AI Conversations
+  async deleteMarketplaceItem(id: number): Promise<void> {
+    const db = await getDrizzle();
+    await db.delete(marketplaceItems).where(eq(marketplaceItems.id, id));
+  }
+
   async getAiConversation(id: number): Promise<AiConversation | undefined> {
-    return this.aiConversations.get(id);
+    const db = await getDrizzle();
+    const result = await db.select().from(aiConversations).where(eq(aiConversations.id, id));
+    return result[0];
   }
 
   async getUserAiConversations(userId: number): Promise<AiConversation[]> {
-    return Array.from(this.aiConversations.values())
-      .filter(conversation => conversation.userId === userId)
-      .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
+    const db = await getDrizzle();
+    return db.select().from(aiConversations).where(eq(aiConversations.userId, userId)).orderBy(aiConversations.updatedAt);
   }
 
   async createAiConversation(insertConversation: InsertAiConversation): Promise<AiConversation> {
-    const id = this.aiConversationIdCounter++;
-    const now = new Date();
-    const conversation: AiConversation = {
-      ...insertConversation,
-      id,
-      createdAt: now,
-      updatedAt: now
-    };
-    this.aiConversations.set(id, conversation);
-    return conversation;
+    const db = await getDrizzle();
+    const result = await db.insert(aiConversations).values(insertConversation).returning();
+    return result[0];
   }
 
-  async updateAiConversation(id: number, conversationData: Partial<AiConversation>): Promise<AiConversation | undefined> {
-    const conversation = this.aiConversations.get(id);
-    if (!conversation) return undefined;
-    
-    const updatedConversation: AiConversation = {
-      ...conversation,
-      ...conversationData,
-      updatedAt: new Date()
-    };
-    this.aiConversations.set(id, updatedConversation);
-    return updatedConversation;
+  async updateAiConversation(id: number, data: Partial<AiConversation>): Promise<AiConversation | undefined> {
+    const db = await getDrizzle();
+    const result = await db.update(aiConversations)
+      .set(data)
+      .where(eq(aiConversations.id, id))
+      .returning();
+    return result[0];
   }
 
-  // Wishlist operations
   async getWishlistItem(userId: number, itemId: number): Promise<WishlistItem | undefined> {
-    return Array.from(this.wishlistItems.values()).find(
-      item => item.userId === userId && item.itemId === itemId
-    );
+    const db = await getDrizzle();
+    const result = await db
+      .select()
+      .from(wishlistItems)
+      .where(and(eq(wishlistItems.userId, userId), eq(wishlistItems.itemId, itemId)));
+    return result[0];
   }
 
   async getUserWishlist(userId: number): Promise<WishlistItem[]> {
-    return Array.from(this.wishlistItems.values())
-      .filter(item => item.userId === userId);
+    const db = await getDrizzle();
+    return db.select().from(wishlistItems).where(eq(wishlistItems.userId, userId)).orderBy(wishlistItems.id);
   }
 
   async addToWishlist(userId: number, itemId: number): Promise<WishlistItem> {
-    const id = this.wishlistItemIdCounter++;
-    const now = new Date();
-    const wishlistItem: WishlistItem = {
-      id,
-      userId,
-      itemId,
-      createdAt: now
-    };
-    this.wishlistItems.set(id, wishlistItem);
-    return wishlistItem;
+    const db = await getDrizzle();
+    const result = await db.insert(wishlistItems).values({ userId, itemId }).returning();
+    return result[0];
   }
 
   async removeFromWishlist(userId: number, itemId: number): Promise<void> {
-    const wishlistItem = await this.getWishlistItem(userId, itemId);
-    if (wishlistItem) {
-      this.wishlistItems.delete(wishlistItem.id);
-    }
+    const db = await getDrizzle();
+    await db.delete(wishlistItems).where(and(eq(wishlistItems.userId, userId), eq(wishlistItems.itemId, itemId)));
   }
 
-  // Cart operations
-  async getCartItem(userId: number, itemId: number): Promise<CartItem | undefined> {
-    return Array.from(this.cartItems.values()).find(
-      item => item.userId === userId && item.itemId === itemId
-    );
+  async getAllUsers(): Promise<User[]> {
+    const db = await getDrizzle();
+    return db.select().from(users).orderBy(users.id);
   }
 
+  async deleteUser(id: number): Promise<void> {
+    const db = await getDrizzle();
+    await db.delete(users).where(eq(users.id, id));
+    await db.delete(wallets).where(eq(wallets.userId, id));
+    await db.delete(messages).where(and(eq(messages.senderId, id), eq(messages.receiverId, id)));
+    await db.delete(marketplaceItems).where(eq(marketplaceItems.sellerId, id));
+    await db.delete(chamaMembers).where(eq(chamaMembers.userId, id));
+    await db.delete(aiConversations).where(eq(aiConversations.userId, id));
+    await db.delete(wishlistItems).where(eq(wishlistItems.userId, id));
+    await db.delete(cartItems).where(eq(cartItems.userId, id));
+    await db.delete(orders).where(eq(orders.userId, id));
+    await db.delete(orderItems).where(eq(orderItems.orderId, orders.id));
+    await db.delete(contributions).where(eq(contributions.userId, id));
+    await db.delete(mindMaps).where(eq(mindMaps.userId, id));
+  }
+
+  async getChamaMembershipsByUserId(userId: number): Promise<ChamaMember[]> {
+    const db = await getDrizzle();
+    return db.select().from(chamaMembers).where(eq(chamaMembers.userId, userId));
+  }
+
+  async getContribution(id: number): Promise<Contribution | undefined> {
+    const db = await getDrizzle();
+    const result = await db.select().from(contributions).where(eq(contributions.id, id));
+    return result[0];
+  }
+
+  async getChamaContributions(chamaId: number): Promise<Contribution[]> {
+    const db = await getDrizzle();
+    return db.select().from(contributions).where(eq(contributions.chamaId, chamaId)).orderBy(contributions.createdAt);
+  }
+
+  async createContribution(insertContribution: InsertContribution): Promise<Contribution> {
+    const db = await getDrizzle();
+    const result = await db.insert(contributions).values(insertContribution).returning();
+    return result[0];
+  }
+
+  async updateContribution(id: number, data: Partial<Contribution>): Promise<Contribution | undefined> {
+    const db = await getDrizzle();
+    const result = await db.update(contributions)
+      .set(data)
+      .where(eq(contributions.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async getChamaMeetings(chamaId: number): Promise<Meeting[]> {
+    const db = await getDrizzle();
+    const results = await db.select().from(meetings).where(eq(meetings.chamaId, chamaId)).orderBy(meetings.scheduledFor);
+    
+    // Convert Unix timestamps to Date objects
+    return results.map(meeting => ({
+      ...meeting,
+      scheduledFor: new Date(Number(meeting.scheduledFor) * 1000),
+      createdAt: new Date(Number(meeting.createdAt) * 1000),
+      updatedAt: new Date(Number(meeting.updatedAt) * 1000)
+    }));
+  }
+
+  async createMeeting(data: InsertMeeting): Promise<Meeting> {
+    const db = await getDrizzle();
+    
+    // Convert Date objects to Date type for SQLite
+    const meetingData = {
+      ...data,
+      scheduledFor: new Date(data.scheduledFor),
+      status: data.status || 'upcoming'
+    };
+
+    const result = await db.insert(meetings).values(meetingData).returning();
+    
+    // Convert timestamps back to Date objects in the response
+    return {
+      ...result[0],
+      scheduledFor: result[0].scheduledFor instanceof Date ? result[0].scheduledFor : new Date(result[0].scheduledFor),
+      createdAt: result[0].createdAt instanceof Date ? result[0].createdAt : new Date(result[0].createdAt),
+      updatedAt: result[0].updatedAt instanceof Date ? result[0].updatedAt : new Date(result[0].updatedAt)
+    };
+  }
+
+  async updateMeeting(id: number, data: Partial<Meeting>): Promise<Meeting> {
+    const db = await getDrizzle();
+    
+    // Ensure scheduledFor is a Date object
+    const updateData = {
+      ...data,
+      scheduledFor: data.scheduledFor ? new Date(data.scheduledFor) : undefined
+    };
+
+    const result = await db.update(meetings)
+      .set(updateData)
+      .where(eq(meetings.id, id))
+      .returning();
+
+    // Convert timestamps back to Date objects in the response
+    return {
+      ...result[0],
+      scheduledFor: result[0].scheduledFor instanceof Date ? result[0].scheduledFor : new Date(result[0].scheduledFor),
+      createdAt: result[0].createdAt instanceof Date ? result[0].createdAt : new Date(result[0].createdAt),
+      updatedAt: result[0].updatedAt instanceof Date ? result[0].updatedAt : new Date(result[0].updatedAt)
+    };
+  }
+
+  // Cart methods implementation
   async getUserCart(userId: number): Promise<CartItem[]> {
-    return Array.from(this.cartItems.values())
-      .filter(item => item.userId === userId);
+    const db = await getDrizzle();
+    return db.select().from(cartItems).where(eq(cartItems.userId, userId));
+  }
+
+  async getCartItem(userId: number, itemId: number): Promise<CartItem | undefined> {
+    const db = await getDrizzle();
+    const result = await db
+      .select()
+      .from(cartItems)
+      .where(and(eq(cartItems.userId, userId), eq(cartItems.itemId, itemId)));
+    return result[0];
   }
 
   async addToCart(userId: number, itemId: number, quantity: number): Promise<CartItem> {
-    const id = this.cartItemIdCounter++;
-    const now = new Date();
-    const cartItem: CartItem = {
-      id,
-      userId,
-      itemId,
-      quantity,
-      createdAt: now
-    };
-    this.cartItems.set(id, cartItem);
-    return cartItem;
+    const db = await getDrizzle();
+    const result = await db
+      .insert(cartItems)
+      .values({
+        userId,
+        itemId,
+        quantity,
+      } satisfies InsertCartItem)
+      .returning();
+    return result[0];
   }
 
-  async updateCartItem(userId: number, itemId: number, data: Partial<CartItem>): Promise<CartItem | undefined> {
-    const cartItem = await this.getCartItem(userId, itemId);
-    if (!cartItem) return undefined;
-    
-    const updatedCartItem: CartItem = { ...cartItem, ...data };
-    this.cartItems.set(cartItem.id, updatedCartItem);
-    return updatedCartItem;
-  }
+  async updateCartItem(userId: number, itemId: number, data: Partial<CartItem>): Promise<CartItem> {
+  const db = await getDrizzle();
+    const result = await db
+      .update(cartItems)
+      .set(data)
+      .where(and(eq(cartItems.userId, userId), eq(cartItems.itemId, itemId)))
+      .returning();
+  return result[0];
+}
 
   async removeFromCart(userId: number, itemId: number): Promise<void> {
-    const cartItem = await this.getCartItem(userId, itemId);
-    if (cartItem) {
-      this.cartItems.delete(cartItem.id);
-    }
+    const db = await getDrizzle();
+    await db
+      .delete(cartItems)
+      .where(and(eq(cartItems.userId, userId), eq(cartItems.itemId, itemId)));
   }
 
   async clearUserCart(userId: number): Promise<void> {
-    const userCartItems = await this.getUserCart(userId);
-    userCartItems.forEach(item => {
-      this.cartItems.delete(item.id);
-    });
+    const db = await getDrizzle();
+    await db.delete(cartItems).where(eq(cartItems.userId, userId));
   }
 
-  // Order operations
-  async createOrder(userId: number, totalAmount: number, items: { itemId: number; quantity: number; price: number }[]): Promise<Order> {
-    const orderId = this.orderIdCounter++;
-    const now = new Date();
+  async createOrder(userId: number, totalAmount: number, items: any[]): Promise<Order> {
+    const db = await getDrizzle();
     
-    // Create order
-    const order: Order = {
-      id: orderId,
-      userId,
-      totalAmount,
-      currency: 'KES',
-      status: 'pending',
-      createdAt: now
-    };
-    this.orders.set(orderId, order);
+    // Create the order first
+    const [order] = await db
+      .insert(orders)
+      .values({
+        userId,
+        totalAmount,
+        status: 'completed',
+        currency: 'KES'
+      } satisfies InsertOrder)
+      .returning();
 
-    // Create order items
-    items.forEach(item => {
-      const orderItemId = this.orderItemIdCounter++;
-      const orderItem: OrderItem = {
-        id: orderItemId,
-        orderId,
-        itemId: item.itemId,
-        quantity: item.quantity,
-        price: item.price,
-        createdAt: now
-      };
-      this.orderItems.set(orderItemId, orderItem);
-    });
+    // Create order items and update marketplace items
+    for (const item of items) {
+      // Create order item
+      await db
+        .insert(orderItems)
+        .values({
+          orderId: order.id,
+          itemId: item.itemId,
+          quantity: item.quantity,
+          price: item.price,
+          currency: 'KES'
+        } satisfies InsertOrderItem);
+
+      // Update marketplace item quantity
+      const [marketplaceItem] = await db
+        .select()
+        .from(marketplaceItems)
+        .where(eq(marketplaceItems.id, item.itemId))
+        .limit(1);
+
+      if (marketplaceItem) {
+        const newQuantity = marketplaceItem.quantity - item.quantity;
+        await db
+          .update(marketplaceItems)
+          .set({
+            quantity: newQuantity,
+            isActive: newQuantity > 0
+          })
+          .where(eq(marketplaceItems.id, item.itemId));
+      }
+    }
 
     return order;
   }
 
-  async getOrder(id: number): Promise<Order | undefined> {
-    return this.orders.get(id);
-  }
-
-  async getUserOrders(userId: number): Promise<Order[]> {
-    return Array.from(this.orders.values())
-      .filter(order => order.userId === userId);
-  }
-
-  async getOrderItems(orderId: number): Promise<OrderItem[]> {
-    return Array.from(this.orderItems.values())
-      .filter(item => item.orderId === orderId);
-  }
-
-  // Admin methods
-  async getAllUsers(): Promise<User[]> {
-    return Array.from(this.users.values());
-  }
-
-  // Helper method to clean up duplicate members
-  async cleanupDuplicateMembers(chamaId: number): Promise<void> {
-    const members = Array.from(this.chamaMembers.values())
-      .filter(member => member.chamaId === chamaId);
+  // Chama invitation methods
+  async createChamaInvitation(data: {
+    chamaId: number;
+    invitedUserId: number;
+    invitedByUserId: number;
+    role: string;
+  }): Promise<ChamaInvitation> {
+    const db = await getDrizzle();
     
-    // Group members by userId
-    const membersByUser = new Map<number, ChamaMember[]>();
-    members.forEach(member => {
-      const existing = membersByUser.get(member.userId) || [];
-      membersByUser.set(member.userId, [...existing, member]);
-    });
-    
-    // Keep only the most recent active member for each user
-    membersByUser.forEach((userMembers: ChamaMember[], userId: number) => {
-      if (userMembers.length > 1) {
-        // Sort by joinedAt date, most recent first
-        userMembers.sort((a: ChamaMember, b: ChamaMember) => 
-          b.joinedAt.getTime() - a.joinedAt.getTime()
-        );
-        
-        // Keep the first one (most recent) active, remove others
-        const [keepMember, ...duplicates] = userMembers;
-        keepMember.isActive = true;
-        
-        // Remove duplicate entries
-        duplicates.forEach((duplicate: ChamaMember) => {
-          this.chamaMembers.delete(duplicate.id);
-        });
+    try {
+      // First check if there's already a pending invitation
+      const existingInvitation = await this.getChamaInvitation(data.chamaId, data.invitedUserId);
+      if (existingInvitation && existingInvitation.status === "pending") {
+        throw new Error("User already has a pending invitation");
       }
-    });
-    
-    // Update the chama member count
-    const activeMembers = Array.from(this.chamaMembers.values())
-      .filter(member => member.chamaId === chamaId && member.isActive)
-      .length;
-    
-    const chama = await this.getChama(chamaId);
-    if (chama) {
-      await this.updateChama(chama.id, { memberCount: activeMembers });
+
+      // Check if user is already a member
+      const existingMember = await this.getChamaMember(data.chamaId, data.invitedUserId);
+      if (existingMember) {
+        throw new Error("User is already a member of this chama");
+      }
+
+      const result = await db.insert(chamaInvitations)
+        .values({
+          chamaId: data.chamaId,
+          invitedUserId: data.invitedUserId,
+          invitedByUserId: data.invitedByUserId,
+          role: data.role,
+          status: "pending",
+        })
+        .returning();
+      
+      return result[0];
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error("Failed to create invitation");
     }
   }
 
-  async deleteUser(id: number): Promise<void> {
-    // Delete user
-    this.users.delete(id);
-
-    // Delete associated data
-    const userWallet = Array.from(this.wallets.values()).find(w => w.userId === id);
-    if (userWallet) {
-      this.wallets.delete(userWallet.id);
-    }
-
-    // Delete user's messages
-    Array.from(this.messages.values())
-      .filter(m => m.senderId === id || m.receiverId === id)
-      .forEach(m => this.messages.delete(m.id));
-
-    // Delete user's marketplace items
-    Array.from(this.marketplaceItems.values())
-      .filter(i => i.sellerId === id)
-      .forEach(i => this.marketplaceItems.delete(i.id));
-
-    // Delete user's chama memberships
-    Array.from(this.chamaMembers.values())
-      .filter(m => m.userId === id)
-      .forEach(m => this.chamaMembers.delete(m.id));
-
-    // Delete user's AI conversations
-    Array.from(this.aiConversations.values())
-      .filter(c => c.userId === id)
-      .forEach(c => this.aiConversations.delete(c.id));
-
-    // Delete user's wishlist items
-    Array.from(this.wishlistItems.values())
-      .filter(w => w.userId === id)
-      .forEach(w => this.wishlistItems.delete(w.id));
-
-    // Delete user's cart items
-    Array.from(this.cartItems.values())
-      .filter(c => c.userId === id)
-      .forEach(c => this.cartItems.delete(c.id));
-
-    // Delete user's orders
-    Array.from(this.orders.values())
-      .filter(o => o.userId === id)
-      .forEach(o => {
-        // Delete order items first
-        Array.from(this.orderItems.values())
-          .filter(oi => oi.orderId === o.id)
-          .forEach(oi => this.orderItems.delete(oi.id));
-        // Then delete the order
-        this.orders.delete(o.id);
-      });
-  }
-
-  async getChamaMembershipsByUserId(userId: number): Promise<ChamaMember[]> {
-    return Array.from(this.chamaMembers.values())
-      .filter(member => member.userId === userId);
-  }
-
-  // Contribution methods
-  async getContribution(id: number): Promise<Contribution | undefined> {
-    return this.contributions.get(id);
-  }
-
-  async getChamaContributions(chamaId: number): Promise<Contribution[]> {
-    return Array.from(this.contributions.values())
-      .filter(contribution => contribution.chamaId === chamaId)
-      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
-  }
-
-  async createContribution(insertContribution: InsertContribution): Promise<Contribution> {
-    const id = this.contributionIdCounter++;
-    const now = new Date();
-    const contribution: Contribution = {
-      ...insertContribution,
-      id,
-      status: insertContribution.status || "pending",
-      createdAt: now,
-      paidAt: null
-    };
-    this.contributions.set(id, contribution);
-    return contribution;
-  }
-
-  async updateContribution(id: number, data: Partial<Contribution>): Promise<Contribution | undefined> {
-    const contribution = this.contributions.get(id);
-    if (!contribution) return undefined;
-    
-    const updatedContribution: Contribution = {
-      ...contribution,
-      ...data
-    };
-    this.contributions.set(id, updatedContribution);
-    return updatedContribution;
-  }
-
-  // Meeting methods
-  async getChamaMeetings(chamaId: number): Promise<Meeting[]> {
-    return Array.from(this.meetings.values())
-      .filter(meeting => meeting.chamaId === chamaId)
-      .sort((a, b) => new Date(b.scheduledFor).getTime() - new Date(a.scheduledFor).getTime());
-  }
-
-  async createMeeting(data: InsertMeeting): Promise<Meeting> {
-    const meeting: Meeting = {
-      id: this.meetingIdCounter++,
-      chamaId: data.chamaId,
-      title: data.title,
-      description: data.description ?? null,
-      scheduledFor: data.scheduledFor,
-      location: data.location ?? null,
-      agenda: data.agenda ?? null,
-      status: data.status ?? "upcoming",
-      minutes: data.minutes ?? null,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    };
-
-    this.meetings.set(meeting.id, meeting);
-    return meeting;
-  }
-
-  async updateMeeting(id: number, data: Partial<Meeting>): Promise<Meeting> {
-    const meeting = this.meetings.get(id);
-    if (!meeting) {
-      throw new Error("Meeting not found");
-    }
-
-    const updatedMeeting = {
-      ...meeting,
-      ...data,
-      updatedAt: new Date().toISOString()
-    };
-
-    this.meetings.set(id, updatedMeeting);
-    return updatedMeeting;
-  }
-}
-
-export const storage = new MemStorage();
-
-// Chama invitation functions
-export async function createChamaInvitation(data: any) {
-  const result = await db.insert(chamaInvitations).values(data).returning();
-  return result[0];
-}
-
-export async function getChamaInvitation(chamaId: number, userId: number) {
+  async getChamaInvitation(chamaId: number, userId: number): Promise<ChamaInvitation | undefined> {
+  const db = await getDrizzle();
   const result = await db
     .select()
     .from(chamaInvitations)
@@ -988,7 +774,8 @@ export async function getChamaInvitation(chamaId: number, userId: number) {
   return result[0];
 }
 
-export async function getChamaInvitationById(invitationId: number) {
+  async getChamaInvitationById(invitationId: number): Promise<ChamaInvitation | undefined> {
+  const db = await getDrizzle();
   const result = await db
     .select()
     .from(chamaInvitations)
@@ -997,31 +784,45 @@ export async function getChamaInvitationById(invitationId: number) {
   return result[0];
 }
 
-export async function updateChamaInvitation(invitationId: number, data: any) {
-  const result = await db
-    .update(chamaInvitations)
+  async updateChamaInvitation(invitationId: number, data: {
+    status: string;
+    respondedAt: Date;
+  } | any, tx?: any): Promise<ChamaInvitation> {
+    const db = tx || await getDrizzle();
+    try {
+      const result = await db.update(chamaInvitations)
     .set(data)
     .where(eq(chamaInvitations.id, invitationId))
     .returning();
   return result[0];
+    } catch (error) {
+      console.error('Error updating chama invitation:', error);
+      throw new Error('Failed to update chama invitation');
+    }
 }
 
-export async function getChamaInvitations(chamaId: number) {
+  async getChamaInvitations(chamaId: number): Promise<any[]> {
+  const db = await getDrizzle();
   const invitedUsers = users;
   const invitedByUsers = users;
   
-  return db
+    try {
+  const result = await db
     .select({
       id: chamaInvitations.id,
       chamaId: chamaInvitations.chamaId,
+          invitedUserId: chamaInvitations.invitedUserId,
+          invitedByUserId: chamaInvitations.invitedByUserId,
       invitedUser: {
         id: invitedUsers.id,
+            username: invitedUsers.username,
         fullName: invitedUsers.fullName,
         email: invitedUsers.email,
         profilePic: invitedUsers.profilePic,
       },
       invitedByUser: {
         id: invitedByUsers.id,
+            username: invitedByUsers.username,
         fullName: invitedByUsers.fullName,
       },
       role: chamaInvitations.role,
@@ -1034,12 +835,19 @@ export async function getChamaInvitations(chamaId: number) {
     .innerJoin(invitedByUsers, eq(chamaInvitations.invitedByUserId, invitedByUsers.id))
     .where(eq(chamaInvitations.chamaId, chamaId))
     .orderBy(desc(chamaInvitations.invitedAt));
+  
+  return result;
+    } catch (error) {
+      console.error('Error fetching chama invitations:', error);
+      throw new Error("Failed to fetch invitations");
+    }
 }
 
-export async function getUserChamaInvitations(userId: number) {
+  async getUserChamaInvitations(userId: number): Promise<any[]> {
+  const db = await getDrizzle();
   const invitedByUsers = users;
   
-  return db
+  const result = await db
     .select({
       id: chamaInvitations.id,
       chama: {
@@ -1062,4 +870,141 @@ export async function getUserChamaInvitations(userId: number) {
     .innerJoin(invitedByUsers, eq(chamaInvitations.invitedByUserId, invitedByUsers.id))
     .where(eq(chamaInvitations.invitedUserId, userId))
     .orderBy(desc(chamaInvitations.invitedAt));
+  
+  return result;
+  }
+
+  async getUserNotifications(userId: number) {
+    const db = await getDrizzle();
+    try {
+      const result = await db.select({
+        id: notifications.id,
+        userId: notifications.userId,
+        type: notifications.type,
+        title: notifications.title,
+        content: notifications.content,
+        read: notifications.read,
+        createdAt: notifications.createdAt,
+        relatedId: notifications.relatedId,
+      })
+      .from(notifications)
+      .where(eq(notifications.userId, userId))
+      .orderBy(desc(notifications.createdAt));
+
+      return result.map(notification => ({
+        ...notification,
+        createdAt: new Date(Number(notification.createdAt)),
+      }));
+    } catch (error) {
+      console.error('Error getting user notifications:', error);
+      throw new Error('Failed to get user notifications');
+    }
+  }
+
+  async getNotification(id: number) {
+    const db = await getDrizzle();
+    try {
+      const result = await db.select()
+        .from(notifications)
+        .where(eq(notifications.id, id))
+        .limit(1);
+      return result[0];
+    } catch (error) {
+      console.error('Error getting notification:', error);
+      throw new Error('Failed to get notification');
+    }
+  }
+
+  async updateNotification(id: number, data: Partial<typeof notifications.$inferInsert>) {
+    const db = await getDrizzle();
+    try {
+      const result = await db.update(notifications)
+        .set(data)
+        .where(eq(notifications.id, id))
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error('Error updating notification:', error);
+      throw new Error('Failed to update notification');
+    }
+  }
+
+  async createNotification(data: {
+    userId: number;
+    type: string;
+    title: string;
+    content: string;
+    relatedId?: number;
+  }, tx?: any) {
+    const db = tx || await getDrizzle();
+    try {
+      const result = await db.insert(notifications)
+        .values({
+          userId: data.userId,
+          type: data.type,
+          title: data.title,
+          content: data.content,
+          relatedId: data.relatedId,
+        })
+        .returning();
+      return result[0];
+    } catch (error) {
+      console.error('Error creating notification:', error);
+      throw new Error('Failed to create notification');
+    }
+  }
+}
+
+export const storage = new SQLiteStorage();
+
+// Transaction support
+export async function transaction<T>(callback: (tx: any) => Promise<T>): Promise<T> {
+  const db = await getDrizzle();
+  return db.transaction(callback);
+}
+
+// Update addChamaMember to accept transaction
+export async function addChamaMember(data: {
+  chamaId: number;
+  userId: number;
+  role: string;
+}, tx?: any) {
+  const db = tx || await getDrizzle();
+  try {
+    const result = await db.insert(chamaMembers)
+      .values({
+        chamaId: data.chamaId,
+        userId: data.userId,
+        role: data.role,
+      })
+      .returning();
+    
+    // Update chama member count
+    await db.update(chamas)
+      .set({ memberCount: sql`${chamas.memberCount} + 1` })
+      .where(eq(chamas.id, data.chamaId));
+    
+    return result[0];
+  } catch (error) {
+    console.error('Error adding chama member:', error);
+    throw new Error('Failed to add chama member');
+  }
+}
+
+// Update updateChamaInvitation to accept transaction
+export async function updateChamaInvitation(invitationId: number, data: {
+  status: string;
+  respondedAt: Date;
+} | any, tx?: any) {
+  const db = tx || await getDrizzle();
+  try {
+    const result = await db.update(chamaInvitations)
+      .set(data)
+      .where(eq(chamaInvitations.id, invitationId))
+      .returning();
+    return result[0];
+  } catch (error) {
+    console.error('Error updating chama invitation:', error);
+    throw new Error('Failed to update chama invitation');
+  }
 }
